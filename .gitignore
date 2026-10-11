@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+.DS_Store
+.hf_token
+
+# Token iceren yerel scriptler - ASLA yayinlanmasin
+yukle.py
+yükle.py

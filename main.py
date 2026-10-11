@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -50,6 +50,16 @@ from words import WORDS, pick_word, tr_lower
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
+
+# Bazi yukleme yontemleri (GitHub web arayuzu, tek tek dosya gonderen API
+# scriptleri) klasor yapisini kaybedip her seyi kok dizine koyar. Bu durumda
+# TemplateNotFound almamak icin dosyalari kok dizinde de ariyoruz.
+if not (TEMPLATES_DIR / "index.html").is_file() and (BASE_DIR / "index.html").is_file():
+    TEMPLATES_DIR = BASE_DIR
+if not (STATIC_DIR / "app.js").is_file() and (BASE_DIR / "app.js").is_file():
+    STATIC_DIR = BASE_DIR
+
+LAYOUT = "nested" if TEMPLATES_DIR != BASE_DIR else "flat"
 
 MIN_PLAYERS = 3                 # oyunu baslatmak icin gereken en az oyuncu
 MAX_PLAYERS = 12                # bir odadaki en fazla oyuncu
@@ -1072,10 +1082,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-STATIC_DIR.mkdir(exist_ok=True)
-TEMPLATES_DIR.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if not (TEMPLATES_DIR / "index.html").is_file():
+    print(
+        "[UYARI] index.html bulunamadi! Aranan yerler: "
+        f"{BASE_DIR / 'templates' / 'index.html'} ve {BASE_DIR / 'index.html'}",
+        flush=True,
+    )
+if not (STATIC_DIR / "app.js").is_file():
+    print(
+        "[UYARI] app.js bulunamadi! Aranan yerler: "
+        f"{BASE_DIR / 'static' / 'app.js'} ve {BASE_DIR / 'app.js'}",
+        flush=True,
+    )
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+# app.js'i her iki yerlesimde de ayni URL'den servis et.
+@app.get("/static/app.js", include_in_schema=False)
+async def serve_app_js():
+    return FileResponse(STATIC_DIR / "app.js", media_type="application/javascript")
+
+
+# Gercek bir static/ klasoru varsa diger dosyalar icin de mount et. Duz
+# yerlesimde kok dizini mount etmiyoruz (kaynak kodu servis etmesin).
+if STATIC_DIR != BASE_DIR and STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")
@@ -1099,6 +1131,9 @@ async def healthz():
         "rooms": len(ROOMS),
         "players": sum(len(r.players) for r in ROOMS.values()),
         "words": len(WORDS),
+        "layout": LAYOUT,
+        "template_dir": TEMPLATES_DIR.name if TEMPLATES_DIR != BASE_DIR else ".",
+        "static_dir": STATIC_DIR.name if STATIC_DIR != BASE_DIR else ".",
     })
 
 

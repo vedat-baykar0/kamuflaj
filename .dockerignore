@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.git/
+.gitignore
+.idea/
+.vscode/
+*.log
+.hf_token
+deploy.py
