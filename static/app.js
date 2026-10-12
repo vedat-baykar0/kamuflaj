@@ -417,19 +417,25 @@
   }
 
   /*
-   * ROL KARTI — Kamuflaj ile normal oyuncunun ekrani BIREBIR AYNI olmalidir:
-   * ayni kenarlik, ayni arka plan, ayni yazi tipi ve boyutu, ayni satir sayisi.
-   * Role ozel renk/arka plan/font YOKTUR; iki rol de bu tek sablondan uretilir.
-   * Degisen tek sey metin:
-   *   dedektif : "GIZLI KELIME" + kelime      + "IPUCU" + ipucu
-   *   kamuflaj : "ROLUN"        + SEN KAMUFLAJSIN! + "IPUCU" + ipucu
-   * Ipucu herkeste ayni oldugu icin asla bulaniklastirilmaz; sadece ustteki
-   * kelime/rol satiri gizlenebilir (yan yana oynarken omuz ustu bakislar icin).
+   * ROL KARTI — Kamuflaj ile dedektifin ekrani BIREBIR AYNI gorunur:
+   * ayni kenarlik, ayni arka plan, ayni yazi tipi/boyutu, ayni satir sayisi,
+   * ayni kart yuksekligi. Role ozel renk/arka plan YOKTUR; iki rol de bu tek
+   * sablondan uretilir ve sadece METIN degisir:
+   *
+   *   dedektif : GIZLI KELIME / <kelime>        + GOREVIN / KOSTEBEGI BUL
+   *   kamuflaj : ROLUN        / SEN KAMUFLAJSIN! + IPUCU   / <genel ipucu>
+   *
+   * Ipucu SADECE Kamuflaj kartinda yazar; dedektifin kartina hic basilmaz
+   * (sunucu da dedektife ipucu gondermez). Alt blok yine de ayni yapida
+   * durur, cunku eksik bir satir karti kisaltir ve yan yana oynarken kimin
+   * Kamuflaj oldugunu ele verirdi.
    */
   function roleCardTemplate(opts) {
     var blur = opts.hidden ? " blurred" : "";
     var caption = opts.isImposter ? "ROLÜN" : "GİZLİ KELİME";
     var bigText = opts.isImposter ? "SEN KAMUFLAJSIN!" : (opts.word || "—");
+    var subCaption = opts.isImposter ? "İpucu" : "Görevin";
+    var subText = opts.isImposter ? (opts.hint || "—") : "KÖSTEBEĞİ BUL";
     return '<div class="animate-pop rounded-2xl border border-slate-600/70 bg-gradient-to-br from-slate-700/40 to-slate-900/40 p-6 text-center shadow-2xl">' +
       (opts.owner
         ? '<p class="mb-4 text-sm font-black text-slate-200">' + esc(opts.owner) + '</p>'
@@ -438,9 +444,9 @@
       '<h2 id="secret-word" class="mt-2 break-words text-3xl font-black text-slate-50 sm:text-4xl' + blur + '">' +
         esc(bigText) + '</h2>' +
       '<div class="mx-auto mt-5 h-px w-24 bg-slate-600/70"></div>' +
-      '<p class="mt-5 text-xs font-bold uppercase tracking-[.2em] text-slate-400">İpucu</p>' +
-      '<p id="secret-hint" class="mt-1 break-words text-2xl font-black text-slate-100 sm:text-3xl">' +
-        esc(opts.hint || "—") + '</p>' +
+      '<p class="mt-5 text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + subCaption + '</p>' +
+      '<p id="secret-hint" class="mt-1 break-words text-2xl font-black text-slate-100 sm:text-3xl' + blur + '">' +
+        esc(subText) + '</p>' +
       '<p class="mt-5 text-xs text-slate-400">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
       (opts.withToggle
         ? '<div class="mt-4 flex items-center justify-center">' +
@@ -816,8 +822,10 @@
     if (!toggle) { return; }
     toggle.onclick = function () {
       S.wordHidden = !S.wordHidden;
-      var word = el("secret-word");
-      if (word) { word.classList.toggle("blurred", S.wordHidden); }
+      ["secret-word", "secret-hint"].forEach(function (id) {
+        var node = el(id);
+        if (node) { node.classList.toggle("blurred", S.wordHidden); }
+      });
       toggle.textContent = S.wordHidden ? "👁️ Göster" : "🙈 Gizle";
     };
   }

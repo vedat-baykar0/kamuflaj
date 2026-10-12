@@ -165,7 +165,7 @@
         <summary class="cursor-pointer font-bold text-slate-200">Nasıl oynanır?</summary>
         <ol class="mt-3 list-decimal space-y-2 pl-5 text-slate-400">
           <li><b class="text-slate-200">{{ min_players }}</b>–<b class="text-slate-200">{{ max_players }}</b> oyuncu. Herkese aynı gizli kelime verilir, rastgele bir kişi hariç: o <b class="text-rose-300">Kamuflaj</b>'dır.</li>
-          <li>Kamuflaj kelimeyi görmez, sadece <b class="text-slate-200">ipucunu (kategoriyi)</b> görür — örn. "Beyaz Eşya / Mutfak". Böylece ilk sıraya düşse bile söyleyecek bir şeyi olur.</li>
+          <li>Kamuflaj kelimeyi görmez, onun yerine çok <b class="text-slate-200">genel bir ipucu</b> görür — örn. "Eşya", "Mekan", "Yiyecek". Böylece ilk sıraya düşse bile söyleyecek bir şeyi olur, ama kelimeyi bilemez. <b class="text-slate-200">Dedektifler ipucunu görmez</b>, onlar sadece gizli kelimeyi görür.</li>
           <li>Rol ekranı herkes için <b class="text-slate-200">birebir aynı</b> görünür (aynı renk, aynı tasarım); ekranın rengine bakarak kimse Kamuflaj'ı bulamaz.</li>
           <li>Sırayla herkes kelimeyi çağrıştıran <b class="text-slate-200">tek bir kelime</b> söyler. Çok açık söylersen Kamuflaj kelimeyi bulur, çok kapalı söylersen şüpheli olursun.</li>
           <li><b class="text-slate-200">Online modda</b> tur bitince oylama açılır; çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır. Kamuflaj, {{ guess_seconds }} saniyede kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile kazanır. (Puan: dedektifler +2; Kamuflaj +2, doğru tahminle +3; onu doğru oylayan dedektifler +1.)</li>

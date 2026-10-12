@@ -286,10 +286,12 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
         secret_for_viewer = room.secret_word or None
         hint_for_viewer = room.secret_hint or None
     elif in_round and viewer.in_game:
-        # Ipucu (kategori) hem dedektiflere hem Kamuflaj'a gider; boylece iki
-        # ekran birebir ayni yapida olur ve Kamuflaj'in soyleyecegi sey olur.
-        hint_for_viewer = room.secret_hint or None
-        if not viewer_is_imposter:
+        # Tur sirasinda ipucu YALNIZCA Kamuflaj'a gider: dedektifler gizli
+        # kelimeyi, Kamuflaj ise onun yerine genel ipucunu gorur. Dedektife
+        # ipucu hic gonderilmez; boylece tarayici tarafinda da sizamaz.
+        if viewer_is_imposter:
+            hint_for_viewer = room.secret_hint or None
+        else:
             secret_for_viewer = room.secret_word or None
 
     guess_remaining: Optional[int] = None
