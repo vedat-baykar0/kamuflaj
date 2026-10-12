@@ -1,0 +1,17 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Her 10 dakikada bir calisir (UTC)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render app
+        run: |
+          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" \
+            --retry 3 --retry-delay 10 --max-time 60 \
+            https://kamuflaj.onrender.com
