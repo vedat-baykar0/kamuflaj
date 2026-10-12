@@ -89,10 +89,25 @@ PHASE_ENDED = "ended"
 # ---------------------------------------------------------------------------
 
 
+# Karsilastirma icin Turkce karakterleri sadelestirir: kullanici "caydanlik"
+# yazdiginda da "Caydanlik" tahmini dogru sayilsin (klavye/duzen farklari).
+_FOLD_MAP = str.maketrans({
+    "ç": "c",  # c
+    "ğ": "g",  # g
+    "ı": "i",  # i (noktasiz)
+    "ö": "o",  # o
+    "ş": "s",  # s
+    "ü": "u",  # u
+    "â": "a",
+    "î": "i",
+    "û": "u",
+})
+
+
 def normalize_word(text: Any) -> str:
     if not isinstance(text, str):
         return ""
-    return NON_WORD_PATTERN.sub("", tr_lower(text.strip()))
+    return NON_WORD_PATTERN.sub("", tr_lower(text.strip()).translate(_FOLD_MAP))
 
 
 def clean_name(raw: Any) -> str:
@@ -147,6 +162,7 @@ class Room:
     turn_counter: int = 0
     round_no: int = 0
     secret_word: str = ""
+    secret_hint: str = ""
     imposter_id: Optional[str] = None
     words: List[Dict[str, Any]] = field(default_factory=list)
     used_words: Set[str] = field(default_factory=set)
@@ -263,10 +279,16 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
         room.imposter_id and viewer.id == room.imposter_id and room.phase != PHASE_LOBBY
     )
     secret_for_viewer: Optional[str] = None
+    hint_for_viewer: Optional[str] = None
     if finished:
         secret_for_viewer = room.secret_word or None
-    elif in_round and viewer.in_game and not viewer_is_imposter:
-        secret_for_viewer = room.secret_word or None
+        hint_for_viewer = room.secret_hint or None
+    elif in_round and viewer.in_game:
+        # Ipucu (kategori) hem dedektiflere hem Kamuflaj'a gider; boylece iki
+        # ekran birebir ayni yapida olur ve Kamuflaj'in soyleyecegi sey olur.
+        hint_for_viewer = room.secret_hint or None
+        if not viewer_is_imposter:
+            secret_for_viewer = room.secret_word or None
 
     guess_remaining: Optional[int] = None
     if room.phase == PHASE_GUESSING and room.guess_deadline:
@@ -304,6 +326,7 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
         "in_game": viewer.in_game,
         "is_imposter": viewer_is_imposter,
         "secret_word": secret_for_viewer,
+        "secret_hint": hint_for_viewer,
         "is_turn": turn_id == viewer.id,
         "can_write_words": room.mode == MODE_ONLINE and turn_id == viewer.id,
         "voted_for": room.votes.get(viewer.id),
@@ -380,6 +403,7 @@ async def destroy_room(room: Room, reason: str) -> None:
     room.order.clear()
     room.result = None
     room.secret_word = ""
+    room.secret_hint = ""
     room.imposter_id = None
     room.host_id = None
     room.phase = PHASE_LOBBY
@@ -392,6 +416,7 @@ def reset_to_lobby(room: Room) -> None:
     room.turn_counter = 0
     room.round_no = 0
     room.secret_word = ""
+    room.secret_hint = ""
     room.imposter_id = None
     room.words = []
     room.used_words = set()
@@ -416,8 +441,10 @@ def start_game(room: Room) -> Optional[str]:
     random.shuffle(order)
     room.order = order
     room.imposter_id = random.choice(order)
-    room.secret_word = pick_word(room.recent_secrets)
-    room.recent_secrets.append(normalize_word(room.secret_word))
+    entry = pick_word(room.recent_secrets)
+    room.secret_word = entry["kelime"]
+    room.secret_hint = entry["ipucu"]
+    room.recent_secrets.append(room.secret_word)
     if len(room.recent_secrets) > RECENT_SECRET_MEMORY:
         del room.recent_secrets[: len(room.recent_secrets) - RECENT_SECRET_MEMORY]
 
@@ -568,17 +595,17 @@ def finish_game(room: Room, guess: Optional[str]) -> None:
                 p.score += 1
 
     if guess_correct:
-        reason = f"Kamuflaj gizli kelimeyi dogru tahmin etti: “{room.secret_word}”"
+        reason = f"Kamuflaj gizli kelimeyi doğru tahmin etti: “{room.secret_word}”"
     elif caught:
-        reason = "Oylamada kostebek dogru bulundu ve tahmini tutmadi."
+        reason = "Oylamada köstebek doğru bulundu ve tahmini tutmadı."
     elif majority and len(leaders) == 1:
         wrong = room.players.get(leaders[0])
         wrong_name = wrong.name if wrong is not None else "bilinmeyen oyuncu"
-        reason = f"Cogunluk {wrong_name} oyuncusunu sucladi ama kostebek o degildi."
+        reason = f"Çoğunluk {wrong_name} oyuncusunu suçladı ama köstebek o değildi."
     elif total_votes == 0:
-        reason = "Hic oy kullanilmadi, kostebek rahatca kacti."
+        reason = "Hiç oy kullanılmadı, köstebek rahatça kaçtı."
     else:
-        reason = "Oylar bolundu, cogunluk saglanamadi ve kostebek yakalanamadi."
+        reason = "Oylar bölündü, çoğunluk sağlanamadı ve köstebek yakalanamadı."
 
     vote_counts = [
         {
@@ -592,10 +619,11 @@ def finish_game(room: Room, guess: Optional[str]) -> None:
 
     room.result = {
         "winner": winner,
-        "winner_label": "Kamuflaj kazandi!" if winner == "imposter" else "Dedektifler kazandi!",
+        "winner_label": "Kamuflaj kazandı!" if winner == "imposter" else "Dedektifler kazandı!",
         "imposter_id": room.imposter_id,
         "imposter_name": imposter.name if imposter is not None else "(ayrilmis oyuncu)",
         "secret_word": room.secret_word,
+        "secret_hint": room.secret_hint,
         "guess": room.guess_text,
         "guess_correct": guess_correct,
         "caught": caught,
@@ -609,6 +637,39 @@ def finish_game(room: Room, guess: Optional[str]) -> None:
     }
     room.phase = PHASE_ENDED
     room.add_log(f"{room.result['winner_label']} {reason}", "end")
+
+
+def finish_reveal(room: Room) -> None:
+    """Oylama olmadan turu bitirir: kostebek ve gizli kelime aciklanir (local mod)."""
+    cancel_guess_timer(room)
+    room.guess_deadline = None
+    room.guess_text = None
+    room.votes = {}
+    imposter = room.players.get(room.imposter_id or "")
+    room.result = {
+        "winner": "reveal",
+        "winner_label": "Kamuflaj açıklandı!",
+        "imposter_id": room.imposter_id,
+        "imposter_name": imposter.name if imposter is not None else "(ayrılmış oyuncu)",
+        "secret_word": room.secret_word,
+        "secret_hint": room.secret_hint,
+        "guess": None,
+        "guess_correct": False,
+        "caught": False,
+        "reason": "Oda sahibi turu bitirdi. Köstebek ve gizli kelime açıklandı.",
+        "vote_counts": [],
+        "votes": [],
+        "scores": [
+            {"id": pl.id, "name": pl.name, "score": pl.score}
+            for pl in sorted(room.ordered_players(), key=lambda x: -x.score)
+        ],
+    }
+    room.phase = PHASE_ENDED
+    room.add_log(
+        "Tur bitti. Kamuflaj: " + str(room.result["imposter_name"])
+        + " · Gizli kelime: " + room.secret_word,
+        "end",
+    )
 
 
 def abort_game(room: Room, reason: str) -> None:
@@ -920,6 +981,9 @@ async def cmd_submit_word(room: Room, player: Player, data: Dict[str, Any], conn
 
 
 async def cmd_vote(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    if room.mode != MODE_ONLINE:
+        await conn.send(error_payload("bad_mode", "Bu modda oylama yok; turu oda sahibi bitirir."))
+        return
     if room.phase != PHASE_VOTING:
         await conn.send(error_payload("bad_phase", "Oylama su an acik degil."))
         return
@@ -944,6 +1008,9 @@ async def cmd_vote(room: Room, player: Player, data: Dict[str, Any], conn: Conne
 
 
 async def cmd_guess(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    if room.mode != MODE_ONLINE:
+        await conn.send(error_payload("bad_mode", "Bu modda tahmin asamasi yok."))
+        return
     if room.phase != PHASE_GUESSING:
         await conn.send(error_payload("bad_phase", "Tahmin zamani degil."))
         return
@@ -960,6 +1027,9 @@ async def cmd_guess(room: Room, player: Player, data: Dict[str, Any], conn: Conn
 
 
 async def cmd_skip_guess(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    if room.mode != MODE_ONLINE:
+        await conn.send(error_payload("bad_mode", "Bu modda tahmin asamasi yok."))
+        return
     if room.phase != PHASE_GUESSING:
         await conn.send(error_payload("bad_phase", "Tahmin zamani degil."))
         return
@@ -984,17 +1054,33 @@ async def cmd_skip_turn(room: Room, player: Player, data: Dict[str, Any], conn: 
 
 
 async def cmd_start_voting(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
-    """Oda sahibi konusma/kelime turunu bitirip oylamaya gecer."""
+    """Online modda oda sahibi kelime turunu bitirip oylamaya gecer."""
+    if room.mode != MODE_ONLINE:
+        await conn.send(error_payload("bad_mode", "Bu modda oylama yok; 'Oyunu Bitir' kullanilir."))
+        return
     if player.id != room.host_id:
         await conn.send(error_payload("not_host", "Sadece oda sahibi oylamayi baslatabilir."))
         return
-    if room.phase not in (PHASE_PLAYING, PHASE_TALKING):
+    if room.phase != PHASE_PLAYING:
         await conn.send(error_payload("bad_phase", "Su an oylamaya gecilemez."))
         return
     room.turn_counter = room.total_turns
-    if room.phase == PHASE_PLAYING:
-        room.add_log("Oda sahibi oylamayi erken baslatti.", "warn")
+    room.add_log("Oda sahibi oylamayi erken baslatti.", "warn")
     begin_voting(room)
+
+
+async def cmd_end_round(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    """Yan yana modunda oda sahibi turu bitirir: oylama yok, dogrudan aciklama."""
+    if player.id != room.host_id:
+        await conn.send(error_payload("not_host", "Turu sadece oda sahibi bitirebilir."))
+        return
+    if room.mode != MODE_LOCAL:
+        await conn.send(error_payload("bad_mode", "Bu komut yan yana modu icindir."))
+        return
+    if room.phase != PHASE_TALKING:
+        await conn.send(error_payload("bad_phase", "Su an bitirilecek bir tur yok."))
+        return
+    finish_reveal(room)
 
 
 async def cmd_play_again(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
@@ -1047,6 +1133,8 @@ COMMANDS = {
     "skip_turn": cmd_skip_turn,
     "start_voting": cmd_start_voting,
     "force_vote": cmd_start_voting,
+    "end_round": cmd_end_round,
+    "reveal": cmd_end_round,
     "play_again": cmd_play_again,
     "kick": cmd_kick,
     "leave": cmd_leave,
@@ -1193,7 +1281,12 @@ async def healthz():
 async def api_word(exclude: str = ""):
     """Tek telefon modu icin rastgele kelime."""
     recent = [item for item in exclude.split(",") if item.strip()] if exclude else []
-    return JSONResponse({"word": pick_word(recent), "pool": len(WORDS)})
+    entry = pick_word(recent)
+    return JSONResponse({
+        "word": entry["kelime"],
+        "hint": entry["ipucu"],
+        "pool": len(WORDS),
+    })
 
 
 @app.get("/api/room/{code}")

@@ -94,12 +94,12 @@
             <button data-mode="local"
                     class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
               <span class="block text-sm font-bold text-slate-100">🗣️ Yan Yana (Çoklu telefon)</span>
-              <span class="mt-0.5 block text-xs text-slate-400">Herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir.</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir. Oylama yok.</span>
             </button>
             <button data-mode="single"
                     class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
               <span class="block text-sm font-bold text-slate-100">🤝 Elden Ele (Tek telefon)</span>
-              <span class="mt-0.5 block text-xs text-slate-400">Tek cihaz yeter. İsimleri gir, telefon sırayla elden ele dolaşır.</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Tek cihaz yeter. İsimleri gir, telefon elden ele dolaşır. Oylama yok.</span>
             </button>
           </div>
         </div>
@@ -165,10 +165,11 @@
         <summary class="cursor-pointer font-bold text-slate-200">Nasıl oynanır?</summary>
         <ol class="mt-3 list-decimal space-y-2 pl-5 text-slate-400">
           <li><b class="text-slate-200">{{ min_players }}</b>–<b class="text-slate-200">{{ max_players }}</b> oyuncu. Herkese aynı gizli kelime verilir, rastgele bir kişi hariç: o <b class="text-rose-300">Kamuflaj</b>'dır.</li>
+          <li>Kamuflaj kelimeyi görmez, sadece <b class="text-slate-200">ipucunu (kategoriyi)</b> görür — örn. "Beyaz Eşya / Mutfak". Böylece ilk sıraya düşse bile söyleyecek bir şeyi olur.</li>
+          <li>Rol ekranı herkes için <b class="text-slate-200">birebir aynı</b> görünür (aynı renk, aynı tasarım); ekranın rengine bakarak kimse Kamuflaj'ı bulamaz.</li>
           <li>Sırayla herkes kelimeyi çağrıştıran <b class="text-slate-200">tek bir kelime</b> söyler. Çok açık söylersen Kamuflaj kelimeyi bulur, çok kapalı söylersen şüpheli olursun.</li>
-          <li>Tur bitince oylama açılır. Çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır.</li>
-          <li>Kamuflaj, {{ guess_seconds }} saniyede gizli kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile kazanır.</li>
-          <li>Puanlama: Dedektifler kazanırsa her dedektif +2. Kamuflaj kazanırsa +2 (doğru tahminle +3); onu doğru oylayan dedektifler +1.</li>
+          <li><b class="text-slate-200">Online modda</b> tur bitince oylama açılır; çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır. Kamuflaj, {{ guess_seconds }} saniyede kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile kazanır. (Puan: dedektifler +2; Kamuflaj +2, doğru tahminle +3; onu doğru oylayan dedektifler +1.)</li>
+          <li><b class="text-slate-200">Yan yana ve elden ele modlarında oylama yoktur:</b> yüz yüze tartışırsınız, sonra oda sahibi "Oyunu Bitir" ile Kamuflaj'ı ve gizli kelimeyi açıklar.</li>
           <li>Sol üstteki <b class="text-slate-200">Kamuflaj</b> logosuna basmak odadan çıkarır. Oda sahibi çıkarsa oda kapanır.</li>
         </ol>
       </details>

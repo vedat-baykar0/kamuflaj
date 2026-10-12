@@ -25,10 +25,9 @@
 
   var SM = {
     active: false, step: "setup", names: ["", "", "", ""],
-    players: [], word: "", imposter: -1,
+    players: [], word: "", hint: "", imposter: -1,
     revealIndex: 0, revealed: false,
-    voteIndex: 0, voteReady: false, votes: [],
-    guessReady: false, result: null, recent: [], busy: false
+    result: null, recent: [], busy: false
   };
 
   /* ------------------------------------------------------------- yardimcilar */
@@ -71,8 +70,13 @@
       .replace(/I/g, "ı").replace(/İ/g, "i").toLowerCase();
   }
 
+  var FOLD = { "ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u", "â": "a", "î": "i", "û": "u" };
+
+  // Sunucudaki normalize_word ile ayni mantik: Turkce karakterler sadelestirilir.
   function normWord(text) {
-    return trLower(text).trim().replace(/[^\p{L}\p{N}]/gu, "");
+    return trLower(text).trim()
+      .replace(/[çğıöşüâîû]/g, function (c) { return FOLD[c] || c; })
+      .replace(/[^\p{L}\p{N}]/gu, "");
   }
 
   var TOAST_STYLES = {
@@ -335,6 +339,7 @@
   function announcePhase(phase, mode) {
     if (phase === "playing") { toast("Oyun başladı! Rolünü kontrol et.", "ok"); }
     else if (phase === "talking") { toast("Roller dağıtıldı. Rolüne bak ve sesli oynayın.", "ok"); }
+    else if (phase === "ended") { toast("Tur bitti, sonuçlar açıklandı.", "info"); }
     else if (phase === "voting") { toast("Oylama başladı.", "info"); }
     else if (phase === "guessing") { toast("Kamuflaj tahmin ediyor...", "info"); }
   }
@@ -344,8 +349,8 @@
   function renderLobby(st) {
     el("lobby-code").textContent = st.code;
     el("lobby-mode-info").textContent = st.mode === "local"
-      ? "Yan yana modu: herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir. Tur bitince oda sahibi oylamayı başlatır."
-      : "Online mod: sırası gelen oyuncu ipucu kelimesini ekrana yazar.";
+      ? "Yan yana modu: herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir. Oylama yok — tartışma bitince oda sahibi Kamuflaj'ı açıklar."
+      : "Online mod: sırası gelen oyuncu ipucu kelimesini ekrana yazar, sonunda oylama ve tahmin yapılır.";
 
     el("lobby-rounds-wrap").classList.toggle("hidden", st.mode !== "online");
     var select = el("select-rounds");
@@ -410,56 +415,71 @@
     }
   }
 
+  /*
+   * ROL KARTI — Kamuflaj ile normal oyuncunun ekrani BIREBIR AYNI olmalidir:
+   * ayni kenarlik, ayni arka plan, ayni font boyutu, ayni satir sayisi.
+   * Sadece <h2> icindeki metin degisir (kelime veya "SEN KAMUFLAJSIN").
+   * Bu yuzden ikisi de bu tek sablondan uretilir; renk/stil parametresi YOKTUR.
+   */
+  function roleCardTemplate(label, bigText, hint, hidden, withToggle) {
+    var blur = hidden ? " blurred" : "";
+    return '<div class="animate-pop rounded-2xl border border-slate-600/70 bg-gradient-to-br from-slate-700/40 to-slate-900/40 p-6 text-center shadow-2xl">' +
+      '<p class="text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + esc(label) + '</p>' +
+      '<h2 id="secret-word" class="mt-2 break-words text-3xl font-black text-slate-50 sm:text-4xl' + blur + '">' +
+        esc(bigText) + '</h2>' +
+      '<p id="secret-hint" class="mt-3 text-sm font-bold text-slate-200' + blur + '">İpucu: ' + esc(hint || "—") + '</p>' +
+      '<p class="mt-2 text-xs text-slate-400">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
+      (withToggle
+        ? '<div class="mt-4 flex items-center justify-center">' +
+          '<button id="btn-toggle-word" class="tap rounded-lg border border-slate-500/60 bg-slate-700/60 px-4 py-2 text-xs font-bold text-slate-100 transition hover:bg-slate-600/60">' +
+          (hidden ? "👁️ Göster" : "🙈 Gizle") + '</button></div>'
+        : "") +
+      '</div>';
+  }
+
   function roleCardHtml(st) {
     var you = S.you;
     if (st.phase === "ended" && st.result) { return resultCardHtml(st.result, you.id); }
 
     if (!you.in_game) {
-      return '<div class="rounded-2xl border border-slate-600/60 bg-panel/80 p-6 text-center">' +
+      return '<div class="rounded-2xl border border-slate-600/70 bg-gradient-to-br from-slate-700/40 to-slate-900/40 p-6 text-center shadow-2xl">' +
         '<p class="text-xs font-bold uppercase tracking-[.2em] text-slate-400">Rolün</p>' +
-        '<h2 class="mt-2 text-2xl font-black text-slate-200">İzleyici</h2>' +
-        '<p class="mt-2 text-sm text-slate-400">Bu ele sonradan katıldın, sonraki oyunda dahil olacaksın.</p></div>';
+        '<h2 class="mt-2 text-3xl font-black text-slate-50 sm:text-4xl">İZLEYİCİ</h2>' +
+        '<p class="mt-3 text-sm font-bold text-slate-200">Bu ele sonradan katıldın.</p>' +
+        '<p class="mt-2 text-xs text-slate-400">Sonraki turda otomatik olarak oyuna dahil olacaksın.</p></div>';
     }
 
-    var hidden = S.wordHidden;
-    var toggle = '<div class="mt-4 flex flex-wrap items-center justify-center gap-3">' +
-      '<button id="btn-toggle-word" class="tap rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/20">' +
-        (hidden ? "👁️ Göster" : "🙈 Gizle") +
-      '</button></div>';
-
-    if (you.is_imposter) {
-      return '<div class="animate-pop rounded-2xl border border-rose-500/50 bg-gradient-to-br from-rose-500/15 to-rose-900/10 p-6 text-center glow-red">' +
-        '<p class="text-xs font-bold uppercase tracking-[.2em] text-rose-300">Rolün</p>' +
-        '<h2 id="secret-word" class="mt-2 text-3xl font-black text-rose-200 sm:text-4xl' + (hidden ? ' blurred' : '') + '">SEN KAMUFLAJSIN 🥸</h2>' +
-        '<p class="mx-auto mt-3 max-w-xl text-sm text-rose-100/80' + (hidden ? ' blurred' : '') + '" id="secret-hint">' +
-          'Gizli kelimeyi bilmiyorsun. Söylenen kelimelerden anlamaya çalış, uyumlu görün ve yakalanma. ' +
-          'Sonda kelimeyi tek seferde doğru tahmin edersen yakalansan bile kazanırsın.' +
-        '</p>' + toggle + '</div>';
-    }
-
-    return '<div class="animate-pop rounded-2xl border border-emerald-500/50 bg-gradient-to-br from-emerald-500/15 to-emerald-900/10 p-6 text-center glow-green">' +
-      '<p class="text-xs font-bold uppercase tracking-[.2em] text-emerald-300">Gizli kelime</p>' +
-      '<h2 id="secret-word" class="mt-2 break-words text-3xl font-black text-emerald-100 sm:text-4xl' + (hidden ? ' blurred' : '') + '">' +
-        esc(you.secret_word || "—") + '</h2>' +
-      '<p class="mt-3 text-sm text-emerald-100/70">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
-      toggle + '</div>';
+    return roleCardTemplate(
+      "Rolün",
+      you.is_imposter ? "SEN KAMUFLAJSIN" : (you.secret_word || "—"),
+      you.secret_hint,
+      S.wordHidden,
+      true
+    );
   }
 
   function resultCardHtml(r, youId) {
+    var reveal = r.winner === "reveal";
     var crewWin = r.winner === "crew";
     var youWin = crewWin ? (youId !== r.imposter_id) : (youId === r.imposter_id);
-    return '<div class="animate-pop rounded-2xl border p-6 text-center ' +
-      (crewWin ? 'border-emerald-500/50 bg-emerald-500/10 glow-green' : 'border-rose-500/50 bg-rose-500/10 glow-red') + '">' +
-      '<p class="text-xs font-bold uppercase tracking-[.2em] ' + (crewWin ? 'text-emerald-300' : 'text-rose-300') + '">Oyun bitti</p>' +
+    var tone = reveal
+      ? 'border-slate-500/60 bg-slate-700/25'
+      : (crewWin ? 'border-emerald-500/50 bg-emerald-500/10 glow-green' : 'border-rose-500/50 bg-rose-500/10 glow-red');
+    var label = reveal ? 'text-slate-300' : (crewWin ? 'text-emerald-300' : 'text-rose-300');
+    var thirdTile = reveal
+      ? resultTile("İpucu", esc(r.secret_hint || "—"), "text-slate-300")
+      : resultTile("Kamuflaj tahmini", r.guess ? esc(r.guess) + (r.guess_correct ? " ✅" : " ❌") : "— yok —",
+                   r.guess_correct ? "text-emerald-300" : "text-slate-300");
+    return '<div class="animate-pop rounded-2xl border p-6 text-center ' + tone + '">' +
+      '<p class="text-xs font-bold uppercase tracking-[.2em] ' + label + '">Tur bitti</p>' +
       '<h2 class="mt-2 text-3xl font-black sm:text-4xl">' + esc(r.winner_label) + '</h2>' +
       '<p class="mt-2 text-sm text-slate-300">' + esc(r.reason) + '</p>' +
       '<div class="mt-5 grid gap-3 sm:grid-cols-3">' +
         resultTile("Gizli kelime", esc(r.secret_word), "text-emerald-300") +
         resultTile("Kamuflaj", esc(r.imposter_name), "text-rose-300") +
-        resultTile("Kamuflaj tahmini", r.guess ? esc(r.guess) + (r.guess_correct ? " ✅" : " ❌") : "— yok —",
-                   r.guess_correct ? "text-emerald-300" : "text-slate-300") +
+        thirdTile +
       '</div>' +
-      (youId ? '<p class="mt-4 text-sm font-bold ' + (youWin ? 'text-emerald-300' : 'text-slate-400') + '">' +
+      (youId && !reveal ? '<p class="mt-4 text-sm font-bold ' + (youWin ? 'text-emerald-300' : 'text-slate-400') + '">' +
         (youWin ? "Bu eli sen kazandın! 🎉" : "Bu eli kaybettin.") + '</p>' : "") +
       '</div>';
   }
@@ -488,8 +508,9 @@
     }
     if (st.phase === "talking") {
       return '<div class="rounded-2xl border border-amber-400/50 bg-amber-400/10 p-4">' +
-        '<p class="text-sm font-bold text-amber-200">🗣️ Konuşma turu</p>' +
-        '<p class="mt-1 text-xs text-amber-100/70">Sırayla yüz yüze birer kelime söyleyin. Telefona yazmak yok.</p></div>';
+        '<p class="text-sm font-bold text-amber-200">🗣️ Sesli tartışma başladı</p>' +
+        '<p class="mt-1 text-xs text-amber-100/70">Sırayla yüz yüze birer kelime söyleyin, tartışın. ' +
+        'Bu modda oylama yok: bitince oda sahibi Kamuflaj\'ı açıklar.</p></div>';
     }
     if (st.phase === "voting") {
       return '<div class="rounded-2xl border border-indigo-500/50 bg-indigo-500/10 p-4">' +
@@ -540,13 +561,15 @@
     if (st.phase === "talking") {
       if (S.you.is_host) {
         return '<div class="rounded-2xl border border-indigo-500/50 bg-panel/80 p-5">' +
-          '<p class="text-sm font-bold text-slate-200">Konuşma turu devam ediyor</p>' +
-          '<p class="mt-1 text-xs text-slate-500">Herkes kelimesini söyledikten sonra oylamayı başlat.</p>' +
-          '<button id="btn-start-voting" class="tap mt-4 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🗳️ Oylamaya Geç</button>' +
+          '<p class="text-sm font-bold text-slate-200">Sesli tartışma devam ediyor</p>' +
+          '<p class="mt-1 text-xs text-slate-500">Tartışma bitip karar verdiğinizde bu butona bas: ' +
+          'Kamuflaj ve gizli kelime herkesin ekranında açıklanır.</p>' +
+          '<button id="btn-end-round" class="tap mt-4 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir (Kamuflajı Açıkla)</button>' +
           '</div>';
       }
       return '<div class="rounded-2xl border border-edge bg-panel/80 p-5">' +
-        '<p class="text-sm text-slate-400">Kelimeleri sesli söyleyin. Oda sahibi oylamayı başlattığında bu ekran değişecek.</p></div>';
+        '<p class="text-sm text-slate-400">Kelimeleri sesli söyleyin ve tartışın. ' +
+        'Oda sahibi oyunu bitirdiğinde Kamuflaj bu ekranda açıklanacak.</p></div>';
     }
 
     if (st.phase === "voting") { return votePanelHtml(st); }
@@ -600,6 +623,15 @@
 
   function endPanelHtml(st) {
     var r = st.result || {};
+    if (r.winner === "reveal") {
+      var againBtn = S.you.is_host
+        ? '<button id="btn-play-again" class="tap mt-4 w-full rounded-xl bg-emerald-500 px-4 py-4 text-base font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">🔄 Yeni Tur (lobiye dön)</button>'
+        : '<p class="mt-4 rounded-xl border border-edge bg-ink/40 px-4 py-3 text-center text-sm text-slate-400">Oda sahibinin yeni turu başlatması bekleniyor...</p>';
+      return '<div class="rounded-2xl border border-edge bg-panel/80 p-5">' +
+        '<p class="text-sm font-bold text-slate-200">Tur tamamlandı</p>' +
+        '<p class="mt-1 text-xs text-slate-500">Bu modda telefondan oylama yapılmaz; kararı yüz yüze verirsiniz.</p>' +
+        againBtn + '</div>';
+    }
     var counts = (r.vote_counts || []).map(function (row) {
       return '<li class="flex items-center justify-between rounded-lg border border-edge bg-ink/40 px-3 py-2">' +
         '<span class="font-bold ' + (row.is_imposter ? 'text-rose-300' : 'text-slate-200') + '">' +
@@ -798,6 +830,14 @@
     var skipTurn = el("btn-skip-turn");
     if (skipTurn) { skipTurn.onclick = function () { send({ type: "skip_turn" }); }; }
 
+    var endRound = el("btn-end-round");
+    if (endRound) {
+      endRound.onclick = function () {
+        if (!confirm("Tur bitsin ve Kamuflaj herkese açıklansın mı?")) { return; }
+        send({ type: "end_round" });
+      };
+    }
+
     var startVoting = el("btn-start-voting");
     if (startVoting) {
       startVoting.onclick = function () {
@@ -823,13 +863,10 @@
     SM.names = names;
     SM.players = players;
     SM.word = "";
+    SM.hint = "";
     SM.imposter = -1;
     SM.revealIndex = 0;
     SM.revealed = false;
-    SM.voteIndex = 0;
-    SM.voteReady = false;
-    SM.votes = [];
-    SM.guessReady = false;
     SM.result = null;
     SM.recent = recent;
     SM.busy = false;
@@ -871,7 +908,7 @@
         if (seen[key]) { toast("Aynı isim iki kez var: " + names[i], "error"); return; }
         seen[key] = true;
       }
-      SM.players = names.map(function (n) { return { name: n, score: 0 }; });
+      SM.players = names.map(function (n) { return { name: n }; });
     }
     if (SM.players.length < MIN_PLAYERS) { toast("Yeterli oyuncu yok.", "error"); return; }
     if (SM.busy) { return; }
@@ -886,15 +923,12 @@
       SM.busy = false;
       if (!data || !data.word) { throw new Error("bos cevap"); }
       SM.word = data.word;
+      SM.hint = data.hint || "";
       SM.recent.push(data.word);
       if (SM.recent.length > 60) { SM.recent.shift(); }
       SM.imposter = Math.floor(Math.random() * SM.players.length);
-      SM.votes = new Array(SM.players.length);
       SM.revealIndex = 0;
       SM.revealed = false;
-      SM.voteIndex = 0;
-      SM.voteReady = false;
-      SM.guessReady = false;
       SM.result = null;
       SM.step = "reveal";
       renderSingle();
@@ -904,83 +938,26 @@
     });
   }
 
-  function singleFinish(guessText) {
-    var tally = {};
-    var i;
-    for (i = 0; i < SM.votes.length; i += 1) {
-      var target = SM.votes[i];
-      if (typeof target === "number") { tally[target] = (tally[target] || 0) + 1; }
-    }
-    var totalVotes = 0;
-    var topCount = 0;
-    var leaders = [];
-    Object.keys(tally).forEach(function (key) {
-      totalVotes += tally[key];
-      if (tally[key] > topCount) { topCount = tally[key]; }
-    });
-    Object.keys(tally).forEach(function (key) {
-      if (tally[key] === topCount && topCount > 0) { leaders.push(parseInt(key, 10)); }
-    });
-
-    var majority = totalVotes > 0 && topCount * 2 > totalVotes;
-    var caught = majority && leaders.length === 1 && leaders[0] === SM.imposter;
-    var guess = (guessText || "").trim();
-    var guessCorrect = !!guess && normWord(guess) === normWord(SM.word);
-    var winner = (caught && !guessCorrect) ? "crew" : "imposter";
-
-    if (winner === "crew") {
-      for (i = 0; i < SM.players.length; i += 1) {
-        if (i !== SM.imposter) { SM.players[i].score += 2; }
-      }
-    } else {
-      SM.players[SM.imposter].score += guessCorrect ? 3 : 2;
-      for (i = 0; i < SM.players.length; i += 1) {
-        if (i !== SM.imposter && SM.votes[i] === SM.imposter) { SM.players[i].score += 1; }
-      }
-    }
-
-    var reason;
-    if (guessCorrect) { reason = "Kamuflaj gizli kelimeyi doğru tahmin etti: “" + SM.word + "”"; }
-    else if (caught) { reason = "Oylamada köstebek doğru bulundu ve tahmini tutmadı."; }
-    else if (majority && leaders.length === 1) {
-      reason = "Çoğunluk " + SM.players[leaders[0]].name + " oyuncusunu suçladı ama köstebek o değildi.";
-    } else if (totalVotes === 0) { reason = "Hiç oy kullanılmadı, köstebek rahatça kaçtı."; }
-    else { reason = "Oylar bölündü, çoğunluk sağlanamadı ve köstebek yakalanamadı."; }
-
-    var counts = leaders.length ? null : null;
-    var voteCounts = Object.keys(tally).map(function (key) {
-      var idx = parseInt(key, 10);
-      return { name: SM.players[idx].name, count: tally[key], is_imposter: idx === SM.imposter };
-    }).sort(function (a, b) { return b.count - a.count; });
-
+  // Oylama yok: oda sahibi/telefon sahibi turu bitirir, kostebek aciklanir.
+  function singleRevealResult() {
     SM.result = {
-      winner: winner,
-      winner_label: winner === "imposter" ? "Kamuflaj kazandı!" : "Dedektifler kazandı!",
-      imposter_name: SM.players[SM.imposter].name,
+      winner: "reveal",
+      winner_label: "Kamuflaj açıklandı!",
       imposter_id: "imposter",
+      imposter_name: SM.players[SM.imposter].name,
       secret_word: SM.word,
-      guess: guess || null,
-      guess_correct: guessCorrect,
-      caught: caught,
-      reason: reason,
-      vote_counts: voteCounts,
-      votes: SM.players.map(function (p, idx) {
-        var t = SM.votes[idx];
-        return {
-          voter: p.name,
-          target: typeof t === "number" ? SM.players[t].name : "—",
-          correct: t === SM.imposter
-        };
-      })
+      secret_hint: SM.hint,
+      guess: null,
+      guess_correct: false,
+      caught: false,
+      reason: "Tur bitti. Köstebek ve gizli kelime aşağıda."
     };
     SM.step = "result";
     renderSingle();
   }
 
-  function singleCardBig(title, subtitle, buttonId, buttonText, tone) {
-    var toneClass = tone === "red" ? "border-rose-500/50 bg-rose-500/10 glow-red"
-      : (tone === "green" ? "border-emerald-500/50 bg-emerald-500/10 glow-green" : "border-edge bg-panel/80");
-    return '<div class="animate-pop rounded-2xl border p-6 text-center ' + toneClass + '">' +
+  function singleCardBig(title, subtitle, buttonId, buttonText) {
+    return '<div class="animate-pop rounded-2xl border border-edge bg-panel/80 p-6 text-center">' +
       '<h2 class="text-2xl font-black sm:text-3xl">' + title + '</h2>' +
       (subtitle ? '<p class="mx-auto mt-3 max-w-sm text-sm text-slate-300">' + subtitle + '</p>' : "") +
       '<button id="' + buttonId + '" class="tap mt-6 w-full rounded-xl bg-emerald-500 px-4 py-4 text-base font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">' +
@@ -1004,7 +981,7 @@
 
       panel.innerHTML = '<div class="animate-pop rounded-2xl border border-edge bg-panel/80 p-5">' +
         '<h2 class="text-xl font-black">Elden Ele · Oyuncular</h2>' +
-        '<p class="mt-1 text-sm text-slate-400">İsimleri gir. Telefon sırayla elden ele dolaşacak.</p>' +
+        '<p class="mt-1 text-sm text-slate-400">İsimleri gir. Telefon sırayla elden ele dolaşacak, oylama yok.</p>' +
         '<div class="mt-4 space-y-2">' + rows + '</div>' +
         (SM.names.length < MAX_PLAYERS
           ? '<button id="btn-sadd" class="tap mt-3 w-full rounded-xl border border-dashed border-edge px-4 py-3 text-sm font-bold text-slate-400 transition hover:border-emerald-500/60 hover:text-emerald-300">+ Oyuncu Ekle</button>'
@@ -1042,26 +1019,22 @@
         panel.innerHTML = singleCardBig(
           esc(player.name) + ", telefonu al 📱",
           "Hazır olduğunda <b>Göster</b>'e bas. Başkası ekrana bakmasın!",
-          "btn-sreveal", "Göster", "neutral"
+          "btn-sreveal", "Göster"
         ) + '<p class="mt-3 text-center text-xs text-slate-500">' + (SM.revealIndex + 1) + " / " + SM.players.length + ' oyuncu</p>';
         el("btn-sreveal").onclick = function () { SM.revealed = true; renderSingle(); };
         return;
       }
 
-      var isImposter = SM.revealIndex === SM.imposter;
-      var body = isImposter
-        ? '<div class="animate-pop rounded-2xl border border-rose-500/50 bg-gradient-to-br from-rose-500/15 to-rose-900/10 p-6 text-center glow-red">' +
-          '<p class="text-xs font-bold uppercase tracking-[.2em] text-rose-300">' + esc(player.name) + '</p>' +
-          '<h2 class="mt-2 text-3xl font-black text-rose-200 sm:text-4xl">SEN KAMUFLAJSIN 🥸</h2>' +
-          '<p class="mx-auto mt-3 max-w-sm text-sm text-rose-100/80">Gizli kelimeyi bilmiyorsun. Diğerlerinin söylediği kelimelerden anlamaya çalış ve yakalanma.</p></div>'
-        : '<div class="animate-pop rounded-2xl border border-emerald-500/50 bg-gradient-to-br from-emerald-500/15 to-emerald-900/10 p-6 text-center glow-green">' +
-          '<p class="text-xs font-bold uppercase tracking-[.2em] text-emerald-300">' + esc(player.name) + ' · gizli kelime</p>' +
-          '<h2 class="mt-2 break-words text-3xl font-black text-emerald-100 sm:text-4xl">' + esc(SM.word) + '</h2>' +
-          '<p class="mt-3 text-sm text-emerald-100/70">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyleyeceksin.</p></div>';
-
-      panel.innerHTML = body +
+      // Kamuflaj ve normal oyuncu ayni sablonu kullanir: ekran birebir ayni.
+      panel.innerHTML = roleCardTemplate(
+        player.name,
+        SM.revealIndex === SM.imposter ? "SEN KAMUFLAJSIN" : SM.word,
+        SM.hint,
+        false,
+        false
+      ) +
         '<button id="btn-shide" class="tap mt-4 w-full rounded-xl bg-slate-700 px-4 py-4 text-base font-black text-white transition hover:bg-slate-600 active:scale-[.98]">' +
-        (isLast ? "🙈 Gizle ve Konuşmayı Başlat" : "🙈 Gizle ve " + esc(next.name) + "'e Ver") + '</button>';
+        (isLast ? "🙈 Gizle ve Tartışmayı Başlat" : "🙈 Gizle ve " + esc(next.name) + "'e Ver") + '</button>';
 
       el("btn-shide").onclick = function () {
         SM.revealed = false;
@@ -1073,131 +1046,30 @@
 
     if (SM.step === "talking") {
       panel.innerHTML = '<div class="animate-pop rounded-2xl border border-amber-400/50 bg-amber-400/10 p-6 text-center">' +
-        '<h2 class="text-3xl font-black text-amber-200">Konuşma Başladı! 🗣️</h2>' +
+        '<h2 class="text-3xl font-black text-amber-200">Sesli tartışma başladı! 🗣️</h2>' +
         '<p class="mx-auto mt-3 max-w-sm text-sm text-amber-100/80">' +
-        'Sırayla herkes gizli kelimeyi çağrıştıran <b>tek bir kelime</b> söylesin. ' +
-        'İstediğiniz kadar tur yapın, sonra oylamaya geçin.</p>' +
+        'Sırayla herkes gizli kelimeyi çağrıştıran <b>tek bir kelime</b> söylesin, sonra tartışın. ' +
+        'Kimin Kamuflaj olduğuna yüz yüze karar verin.</p>' +
         '<div class="mt-4 flex flex-wrap justify-center gap-2">' +
-        SM.players.map(function (p) {
-          return '<span class="rounded-lg border border-edge bg-ink/50 px-3 py-1.5 text-sm font-bold text-slate-200">' + esc(p.name) + '</span>';
+        SM.players.map(function (pl) {
+          return '<span class="rounded-lg border border-edge bg-ink/50 px-3 py-1.5 text-sm font-bold text-slate-200">' + esc(pl.name) + '</span>';
         }).join("") +
         '</div>' +
-        '<button id="btn-svote" class="tap mt-6 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🗳️ Oylamaya Geç</button>' +
+        '<button id="btn-sreveal-end" class="tap mt-6 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir ve Kamuflajı Göster</button>' +
         '</div>';
-      el("btn-svote").onclick = function () {
-        SM.step = "vote";
-        SM.voteIndex = 0;
-        SM.voteReady = false;
-        renderSingle();
-      };
-      return;
-    }
-
-    if (SM.step === "vote") {
-      var voter = SM.players[SM.voteIndex];
-      if (!SM.voteReady) {
-        panel.innerHTML = singleCardBig(
-          esc(voter.name) + ", oy sırası sende 🗳️",
-          "Telefonu al, <b>Hazırım</b>'a bas ve köstebek olduğunu düşündüğün kişiyi seç.",
-          "btn-svready", "Hazırım", "neutral"
-        ) + '<p class="mt-3 text-center text-xs text-slate-500">' + (SM.voteIndex + 1) + " / " + SM.players.length + ' oy</p>';
-        el("btn-svready").onclick = function () { SM.voteReady = true; renderSingle(); };
-        return;
-      }
-
-      var options = SM.players.map(function (p, idx) {
-        if (idx === SM.voteIndex) { return ""; }
-        return '<button data-svote="' + idx + '" class="tap flex items-center justify-between rounded-xl border border-edge bg-ink/50 px-4 py-3.5 text-left transition hover:border-rose-500/50 hover:bg-rose-500/10">' +
-          '<span class="font-bold text-slate-200">' + esc(p.name) + '</span>' +
-          '<span class="text-xs font-bold text-slate-500">şüpheli</span></button>';
-      }).join("");
-
-      panel.innerHTML = '<div class="animate-pop rounded-2xl border border-edge bg-panel/80 p-5">' +
-        '<h2 class="text-xl font-black">' + esc(voter.name) + ' · köstebek kim?</h2>' +
-        '<p class="mt-1 text-sm text-slate-400">Seçimini yap, telefon bir sonraki oyuncuya geçecek.</p>' +
-        '<div class="mt-4 grid gap-2">' + options + '</div></div>';
-
-      Array.prototype.forEach.call(panel.querySelectorAll("[data-svote]"), function (btn) {
-        btn.onclick = function () {
-          SM.votes[SM.voteIndex] = parseInt(btn.getAttribute("data-svote"), 10);
-          SM.voteReady = false;
-          if (SM.voteIndex === SM.players.length - 1) {
-            SM.step = "guess";
-          } else {
-            SM.voteIndex += 1;
-          }
-          renderSingle();
-        };
-      });
-      return;
-    }
-
-    if (SM.step === "guess") {
-      var imposterName = SM.players[SM.imposter].name;
-      if (!SM.guessReady) {
-        panel.innerHTML = singleCardBig(
-          "Oylar tamam! 🥸",
-          "<b>" + esc(imposterName) + "</b> (Kamuflaj) telefonu alsın. Gizli kelimeyi tek seferde doğru tahmin ederse yakalansa bile kazanır.",
-          "btn-sgready", esc(imposterName) + ", hazırım", "red"
-        );
-        el("btn-sgready").onclick = function () { SM.guessReady = true; renderSingle(); };
-        return;
-      }
-      panel.innerHTML = '<div class="animate-pop rounded-2xl border border-rose-500/50 bg-panel/80 p-5">' +
-        '<h2 class="text-xl font-black text-rose-200">' + esc(imposterName) + ', gizli kelime ne?</h2>' +
-        '<p class="mt-1 text-sm text-slate-400">Tek hakkın var.</p>' +
-        '<input id="input-sguess" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="gizli kelime"' +
-          ' class="mt-3 w-full rounded-xl border border-edge bg-ink/70 px-4 py-3 text-base font-semibold placeholder:text-slate-600 focus:border-rose-500/70" />' +
-        '<button id="btn-sguess" class="tap mt-3 w-full rounded-xl bg-rose-500 px-4 py-4 text-base font-black text-white transition hover:bg-rose-400 active:scale-[.98]">Tahmin Et</button>' +
-        '<button id="btn-sskip" class="tap mt-2 w-full rounded-xl border border-edge px-4 py-3 text-sm font-bold text-slate-400 transition hover:text-slate-200">Tahmin etmeden sonucu gör</button>' +
-        '</div>';
-      var input = el("input-sguess");
-      input.focus();
-      el("btn-sguess").onclick = function () {
-        var value = input.value.trim();
-        if (!value) { toast("Bir tahmin yaz.", "error"); return; }
-        singleFinish(value);
-      };
-      input.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); el("btn-sguess").click(); } };
-      el("btn-sskip").onclick = function () { singleFinish(""); };
+      el("btn-sreveal-end").onclick = function () { singleRevealResult(); };
       return;
     }
 
     if (SM.step === "result") {
-      var r = SM.result;
-      var counts = r.vote_counts.map(function (row) {
-        return '<li class="flex items-center justify-between rounded-lg border border-edge bg-ink/40 px-3 py-2">' +
-          '<span class="font-bold ' + (row.is_imposter ? 'text-rose-300' : 'text-slate-200') + '">' +
-          esc(row.name) + (row.is_imposter ? " 🥸" : "") + '</span>' +
-          '<span class="text-xs font-bold text-slate-400">' + row.count + ' oy</span></li>';
-      }).join("") || '<li class="rounded-lg border border-edge bg-ink/40 px-3 py-2 text-xs text-slate-500">Hiç oy kullanılmadı.</li>';
-
-      var detail = r.votes.map(function (v) {
-        return '<li class="flex items-center gap-2 text-xs"><span class="text-slate-300">' + esc(v.voter) + '</span>' +
-          '<span class="text-slate-600">→</span><span class="' + (v.correct ? 'text-emerald-300' : 'text-slate-400') + '">' +
-          esc(v.target) + '</span>' + (v.correct ? '<span class="text-emerald-400">✓</span>' : '') + '</li>';
-      }).join("");
-
-      var scores = SM.players.slice().sort(function (a, b) { return b.score - a.score; }).map(function (p) {
-        return '<li class="flex items-center justify-between rounded-lg border border-edge bg-ink/40 px-3 py-2">' +
-          '<span class="text-sm font-bold text-slate-200">' + esc(p.name) + '</span>' +
-          '<span class="text-sm font-black text-emerald-300">' + p.score + '</span></li>';
-      }).join("");
-
-      panel.innerHTML = resultCardHtml(r, "") +
+      panel.innerHTML = resultCardHtml(SM.result, "") +
         '<div class="mt-4 rounded-2xl border border-edge bg-panel/80 p-5">' +
-          '<p class="text-sm font-bold text-slate-200">Oylama dökümü</p>' +
-          '<ul class="mt-3 space-y-2">' + counts + '</ul>' +
-          '<ul class="mt-4 space-y-1 border-t border-edge pt-3">' + detail + '</ul>' +
-          '<p class="mt-5 text-sm font-bold text-slate-200">Puan tablosu</p>' +
-          '<ul class="mt-2 space-y-2">' + scores + '</ul>' +
-          '<button id="btn-snew" class="tap mt-5 w-full rounded-xl bg-emerald-500 px-4 py-4 text-base font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">Yeni Oyun (aynı oyuncular)</button>' +
+          '<button id="btn-snew" class="tap w-full rounded-xl bg-emerald-500 px-4 py-4 text-base font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">🔄 Yeni Tur (aynı oyuncular)</button>' +
           '<button id="btn-splayers" class="tap mt-2 w-full rounded-xl border border-edge px-4 py-3 text-sm font-bold text-slate-400 transition hover:text-slate-200">Oyuncuları Değiştir</button>' +
         '</div>';
-
       el("btn-snew").onclick = function () { singleStartRound(true); };
       el("btn-splayers").onclick = function () {
-        SM.names = SM.players.map(function (p) { return p.name; });
+        SM.names = SM.players.map(function (pl) { return pl.name; });
         SM.step = "setup";
         renderSingle();
       };
