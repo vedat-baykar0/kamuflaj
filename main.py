@@ -21,6 +21,7 @@ Bellek yonetimi
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import random
 import re
@@ -463,7 +464,11 @@ def start_game(room: Room) -> Optional[str]:
         room.phase = PHASE_TALKING
         room.round_no = 0
         room.add_log(f"Roller dagitildi ({len(order)} oyuncu).", "start")
-        room.add_log("Kelimeleri yuz yuze soyleyin. Tur bitince oda sahibi oylamayi baslatir.", "turn")
+        room.add_log(
+            "Kelimeleri konusarak soyleyin. Bu modda oylama yok; tartisma "
+            "bitince oda sahibi Oyunu Bitir ile Kamuflaji aciklar.",
+            "turn",
+        )
     else:
         room.phase = PHASE_PLAYING
         room.round_no = 1
@@ -1244,9 +1249,30 @@ if not (STATIC_DIR / "app.js").is_file():
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
+def asset_version() -> str:
+    """app.js icin icerige bagli surum etiketi.
+
+    index.html script etiketini "?v=<bu deger>" ile ister. Dosya her
+    degistiginde etiket de degisir; boylece tarayici ESKI app.js'i
+    onbellekten sunmaz ve elle "v=3" gibi bir sayiyi artirma zorunlulugu
+    (ve onu unutma riski) ortadan kalkar.
+    """
+    try:
+        raw = (STATIC_DIR / "app.js").read_bytes()
+    except OSError:
+        return "0"
+    return hashlib.sha1(raw).hexdigest()[:10]
+
+
 @app.get("/static/app.js", include_in_schema=False)
 async def serve_app_js():
-    return FileResponse(STATIC_DIR / "app.js", media_type="application/javascript")
+    # Surum etiketi icerikten uretiliyor; tarayici yine de her istekte
+    # dogrulasin ki eski kod hicbir kosulda yapisik kalmasin.
+    return FileResponse(
+        STATIC_DIR / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 if STATIC_DIR != BASE_DIR and STATIC_DIR.is_dir():
@@ -1263,6 +1289,7 @@ async def index(request: Request):
             "max_players": MAX_PLAYERS,
             "word_count": len(WORDS),
             "guess_seconds": GUESS_SECONDS,
+            "asset_v": asset_version(),
         },
     )
 

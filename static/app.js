@@ -418,22 +418,34 @@
 
   /*
    * ROL KARTI — Kamuflaj ile normal oyuncunun ekrani BIREBIR AYNI olmalidir:
-   * ayni kenarlik, ayni arka plan, ayni font boyutu, ayni satir sayisi.
-   * Sadece <h2> icindeki metin degisir (kelime veya "SEN KAMUFLAJSIN").
-   * Bu yuzden ikisi de bu tek sablondan uretilir; renk/stil parametresi YOKTUR.
+   * ayni kenarlik, ayni arka plan, ayni yazi tipi ve boyutu, ayni satir sayisi.
+   * Role ozel renk/arka plan/font YOKTUR; iki rol de bu tek sablondan uretilir.
+   * Degisen tek sey metin:
+   *   dedektif : "GIZLI KELIME" + kelime      + "IPUCU" + ipucu
+   *   kamuflaj : "ROLUN"        + SEN KAMUFLAJSIN! + "IPUCU" + ipucu
+   * Ipucu herkeste ayni oldugu icin asla bulaniklastirilmaz; sadece ustteki
+   * kelime/rol satiri gizlenebilir (yan yana oynarken omuz ustu bakislar icin).
    */
-  function roleCardTemplate(label, bigText, hint, hidden, withToggle) {
-    var blur = hidden ? " blurred" : "";
+  function roleCardTemplate(opts) {
+    var blur = opts.hidden ? " blurred" : "";
+    var caption = opts.isImposter ? "ROLÜN" : "GİZLİ KELİME";
+    var bigText = opts.isImposter ? "SEN KAMUFLAJSIN!" : (opts.word || "—");
     return '<div class="animate-pop rounded-2xl border border-slate-600/70 bg-gradient-to-br from-slate-700/40 to-slate-900/40 p-6 text-center shadow-2xl">' +
-      '<p class="text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + esc(label) + '</p>' +
+      (opts.owner
+        ? '<p class="mb-4 text-sm font-black text-slate-200">' + esc(opts.owner) + '</p>'
+        : "") +
+      '<p class="text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + caption + '</p>' +
       '<h2 id="secret-word" class="mt-2 break-words text-3xl font-black text-slate-50 sm:text-4xl' + blur + '">' +
         esc(bigText) + '</h2>' +
-      '<p id="secret-hint" class="mt-3 text-sm font-bold text-slate-200' + blur + '">İpucu: ' + esc(hint || "—") + '</p>' +
-      '<p class="mt-2 text-xs text-slate-400">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
-      (withToggle
+      '<div class="mx-auto mt-5 h-px w-24 bg-slate-600/70"></div>' +
+      '<p class="mt-5 text-xs font-bold uppercase tracking-[.2em] text-slate-400">İpucu</p>' +
+      '<p id="secret-hint" class="mt-1 break-words text-2xl font-black text-slate-100 sm:text-3xl">' +
+        esc(opts.hint || "—") + '</p>' +
+      '<p class="mt-5 text-xs text-slate-400">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
+      (opts.withToggle
         ? '<div class="mt-4 flex items-center justify-center">' +
           '<button id="btn-toggle-word" class="tap rounded-lg border border-slate-500/60 bg-slate-700/60 px-4 py-2 text-xs font-bold text-slate-100 transition hover:bg-slate-600/60">' +
-          (hidden ? "👁️ Göster" : "🙈 Gizle") + '</button></div>'
+          (opts.hidden ? "👁️ Göster" : "🙈 Gizle") + '</button></div>'
         : "") +
       '</div>';
   }
@@ -450,13 +462,13 @@
         '<p class="mt-2 text-xs text-slate-400">Sonraki turda otomatik olarak oyuna dahil olacaksın.</p></div>';
     }
 
-    return roleCardTemplate(
-      "Rolün",
-      you.is_imposter ? "SEN KAMUFLAJSIN" : (you.secret_word || "—"),
-      you.secret_hint,
-      S.wordHidden,
-      true
-    );
+    return roleCardTemplate({
+      isImposter: you.is_imposter,
+      word: you.secret_word,
+      hint: you.secret_hint,
+      hidden: S.wordHidden,
+      withToggle: true
+    });
   }
 
   function resultCardHtml(r, youId) {
@@ -509,10 +521,12 @@
     }
     if (st.phase === "talking") {
       return '<div class="rounded-2xl border border-amber-400/50 bg-amber-400/10 p-4">' +
-        '<p class="text-sm font-bold text-amber-200">🗣️ Sesli tartışma başladı</p>' +
-        '<p class="mt-1 text-xs text-amber-100/70">Sırayla yüz yüze birer kelime söyleyin, tartışın. ' +
-        'Bu modda oylama yok: bitince oda sahibi Kamuflaj\'ı açıklar.</p></div>';
+        '<p class="text-sm font-bold text-amber-200">🗣️ Sesli tartışma başladı — lütfen yüz yüze konuşun</p>' +
+        '<p class="mt-1 text-xs text-amber-100/70">Sırayla birer kelime söyleyin, sonra tartışın. ' +
+        'Bu modda telefondan oylama yok: bitince oda sahibi Kamuflaj\'ı açıklar.</p></div>';
     }
+    // Oylama ve tahmin bantlari YALNIZCA online moda aittir.
+    if (st.mode !== "online") { return ""; }
     if (st.phase === "voting") {
       return '<div class="rounded-2xl border border-indigo-500/50 bg-indigo-500/10 p-4">' +
         '<p class="text-sm font-bold text-indigo-200">🗳️ Oylama zamanı</p>' +
@@ -528,7 +542,9 @@
   }
 
   function hostToolsHtml(st) {
-    if (!S.you.is_host) { return ""; }
+    // Bu arac cubugu ve icindeki "Oylamaya Gec" YALNIZCA online moda aittir.
+    // Yan Yana modunda tur, localTalkPanelHtml icindeki buton ile bitirilir.
+    if (!S.you.is_host || st.mode !== "online") { return ""; }
     var tools = "";
     if (st.phase === "playing") {
       tools += '<button id="btn-skip-turn" class="tap rounded-lg border border-edge bg-ink px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-amber-500/60">Sırayı atla</button>';
@@ -559,24 +575,39 @@
         hostToolsHtml(st) + '</div>';
     }
 
-    if (st.phase === "talking") {
-      if (S.you.is_host) {
-        return '<div class="rounded-2xl border border-indigo-500/50 bg-panel/80 p-5">' +
-          '<p class="text-sm font-bold text-slate-200">Sesli tartışma devam ediyor</p>' +
-          '<p class="mt-1 text-xs text-slate-500">Tartışma bitip karar verdiğinizde bu butona bas: ' +
-          'Kamuflaj ve gizli kelime herkesin ekranında açıklanır.</p>' +
-          '<button id="btn-end-round" class="tap mt-4 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir (Kamuflajı Açıkla)</button>' +
-          '</div>';
-      }
-      return '<div class="rounded-2xl border border-edge bg-panel/80 p-5">' +
-        '<p class="text-sm text-slate-400">Kelimeleri sesli söyleyin ve tartışın. ' +
-        'Oda sahibi oyunu bitirdiğinde Kamuflaj bu ekranda açıklanacak.</p></div>';
-    }
+    if (st.phase === "talking") { return localTalkPanelHtml(st); }
 
+    if (st.phase === "ended") { return endPanelHtml(st); }
+
+    // Oylama ve tahmin asamalari YALNIZCA online moda aittir. Yan Yana
+    // (Sesli Sohbet) modunda bu fazlara hic girilmez; eski/yanlis bir durum
+    // gelse bile istemci oylama ekranini cizmez, host'a bitirme butonu verir.
+    if (st.mode !== "online") {
+      return localTalkPanelHtml(st);
+    }
     if (st.phase === "voting") { return votePanelHtml(st); }
     if (st.phase === "guessing") { return guessPanelHtml(st); }
-    if (st.phase === "ended") { return endPanelHtml(st); }
     return "";
+  }
+
+  /*
+   * Yan Yana (Sesli Sohbet) modu: oylama YOK. Tartisma sesli yapilir, turu
+   * yalnizca oda sahibi "Oyunu Bitir" ile kapatir ve herkes dogrudan sonuc
+   * ekranina duser.
+   */
+  function localTalkPanelHtml(st) {
+    if (S.you.is_host) {
+      return '<div class="rounded-2xl border border-indigo-500/50 bg-panel/80 p-5">' +
+        '<p class="text-sm font-bold text-slate-200">Sesli tartışma devam ediyor — lütfen yüz yüze konuşun</p>' +
+        '<p class="mt-1 text-xs text-slate-500">Bu modda oylama yok. Tartışma bitip karar verdiğinizde bu butona bas: ' +
+        'Kamuflaj ve gizli kelime herkesin ekranında açıklanır.</p>' +
+        '<button id="btn-end-round" class="tap mt-4 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir (Kamuflajı Açıkla)</button>' +
+        '</div>';
+    }
+    return '<div class="rounded-2xl border border-edge bg-panel/80 p-5">' +
+      '<p class="text-sm font-bold text-slate-200">Sesli tartışma başladı — lütfen yüz yüze konuşun</p>' +
+      '<p class="mt-1 text-xs text-slate-500">Bu modda oylama yok. Oda sahibi oyunu bitirdiğinde ' +
+      'Kamuflaj ve gizli kelime bu ekranda açıklanacak.</p></div>';
   }
 
   function votePanelHtml(st) {
@@ -785,10 +816,8 @@
     if (!toggle) { return; }
     toggle.onclick = function () {
       S.wordHidden = !S.wordHidden;
-      ["secret-word", "secret-hint"].forEach(function (id) {
-        var node = el(id);
-        if (node) { node.classList.toggle("blurred", S.wordHidden); }
-      });
+      var word = el("secret-word");
+      if (word) { word.classList.toggle("blurred", S.wordHidden); }
       toggle.textContent = S.wordHidden ? "👁️ Göster" : "🙈 Gizle";
     };
   }
@@ -1027,13 +1056,14 @@
       }
 
       // Kamuflaj ve normal oyuncu ayni sablonu kullanir: ekran birebir ayni.
-      panel.innerHTML = roleCardTemplate(
-        player.name,
-        SM.revealIndex === SM.imposter ? "SEN KAMUFLAJSIN" : SM.word,
-        SM.hint,
-        false,
-        false
-      ) +
+      panel.innerHTML = roleCardTemplate({
+        owner: player.name,
+        isImposter: SM.revealIndex === SM.imposter,
+        word: SM.word,
+        hint: SM.hint,
+        hidden: false,
+        withToggle: false
+      }) +
         '<button id="btn-shide" class="tap mt-4 w-full rounded-xl bg-slate-700 px-4 py-4 text-base font-black text-white transition hover:bg-slate-600 active:scale-[.98]">' +
         (isLast ? "🙈 Gizle ve Tartışmayı Başlat" : "🙈 Gizle ve " + esc(next.name) + "'e Ver") + '</button>';
 
@@ -1049,8 +1079,8 @@
       panel.innerHTML = '<div class="animate-pop rounded-2xl border border-amber-400/50 bg-amber-400/10 p-6 text-center">' +
         '<h2 class="text-3xl font-black text-amber-200 sm:text-4xl">Sesli Tartışma Başladı! 🗣️</h2>' +
         '<p class="mx-auto mt-3 max-w-sm text-sm text-amber-100/80">' +
-        'Sırayla herkes gizli kelimeyi çağrıştıran <b>tek bir kelime</b> söylesin, sonra tartışın. ' +
-        'Kimin Kamuflaj olduğuna yüz yüze karar verin.</p>' +
+        '<b>Lütfen yüz yüze konuşun.</b> Sırayla herkes gizli kelimeyi çağrıştıran <b>tek bir kelime</b> söylesin, ' +
+        'sonra tartışın. Bu modda telefondan oylama yok; kimin Kamuflaj olduğuna yüz yüze karar verin.</p>' +
         '<div class="mt-4 flex flex-wrap justify-center gap-2">' +
         SM.players.map(function (pl) {
           return '<span class="rounded-lg border border-edge bg-ink/50 px-3 py-1.5 text-sm font-bold text-slate-200">' + esc(pl.name) + '</span>';
