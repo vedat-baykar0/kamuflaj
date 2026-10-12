@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
 <meta name="theme-color" content="#070b16" />
-<meta name="description" content="Kamuflaj - arkadaslarinla oynanan gizli kelime / kostebek bulma oyunu. Online, yan yana ve tek telefon modlari." />
+<meta name="description" content="Kamuflaj - arkadaslarinla oynanan gizli kelime / kostebek bulma oyunu. Online, yan yana (sesli sohbet) ve tek telefon modlari." />
 <title>Kamuflaj — Köstebeği Bul</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%95%B5%EF%B8%8F%3C/text%3E%3C/svg%3E" />
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
@@ -56,7 +56,7 @@
     <div id="room-chip" class="hidden items-center gap-2 rounded-full border border-edge bg-panel px-3 py-1 text-xs">
       <span class="text-slate-400">Oda</span>
       <span id="room-chip-code" class="code-font font-bold text-emerald-400">----</span>
-      <span id="room-chip-mode" class="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-300"></span>
+      <span id="room-chip-mode" class="whitespace-nowrap rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-300"></span>
     </div>
     <div class="ml-auto flex items-center gap-2">
       <button id="btn-copy-link" class="tap hidden rounded-lg border border-edge bg-panel px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-emerald-500/60 hover:text-emerald-300">🔗 Davet</button>
@@ -93,8 +93,8 @@
             </button>
             <button data-mode="local"
                     class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
-              <span class="block text-sm font-bold text-slate-100">🗣️ Yan Yana (Çoklu telefon)</span>
-              <span class="mt-0.5 block text-xs text-slate-400">Herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir. Oylama yok.</span>
+              <span class="block text-sm font-bold text-slate-100">🗣️ Yan Yana (Sesli Sohbet)</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Çoklu telefon: herkes rolünü kendi telefonunda görür, kelimeler konuşarak söylenir. Oylama yok.</span>
             </button>
             <button data-mode="single"
                     class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
@@ -169,7 +169,7 @@
           <li>Rol ekranı herkes için <b class="text-slate-200">birebir aynı</b> görünür (aynı renk, aynı tasarım); ekranın rengine bakarak kimse Kamuflaj'ı bulamaz.</li>
           <li>Sırayla herkes kelimeyi çağrıştıran <b class="text-slate-200">tek bir kelime</b> söyler. Çok açık söylersen Kamuflaj kelimeyi bulur, çok kapalı söylersen şüpheli olursun.</li>
           <li><b class="text-slate-200">Online modda</b> tur bitince oylama açılır; çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır. Kamuflaj, {{ guess_seconds }} saniyede kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile kazanır. (Puan: dedektifler +2; Kamuflaj +2, doğru tahminle +3; onu doğru oylayan dedektifler +1.)</li>
-          <li><b class="text-slate-200">Yan yana ve elden ele modlarında oylama yoktur:</b> yüz yüze tartışırsınız, sonra oda sahibi "Oyunu Bitir" ile Kamuflaj'ı ve gizli kelimeyi açıklar.</li>
+          <li><b class="text-slate-200">Yan Yana (Sesli Sohbet) ve Elden Ele modlarında oylama yoktur:</b> yüz yüze tartışırsınız, sonra oda sahibi "Oyunu Bitir" ile Kamuflaj'ı ve gizli kelimeyi açıklar.</li>
           <li>Sol üstteki <b class="text-slate-200">Kamuflaj</b> logosuna basmak odadan çıkarır. Oda sahibi çıkarsa oda kapanır.</li>
         </ol>
       </details>

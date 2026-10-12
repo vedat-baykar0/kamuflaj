@@ -4,8 +4,9 @@ Kamuflaj (Camouflage) — gercek zamanli Imposter/Spyfall tarzi parti oyunu.
 Oyun modlari
 ------------
 * online : Herkes kendi telefonundan oynar, ipucu kelimeleri ekrandan yazilir.
-* local  : Herkes kendi telefonundan rolunu gorur, kelimeler yuz yuze soylenir;
-           oda sahibi "Oylamaya Gec" butonuna basarak oylamayi baslatir.
+* local  : Yan Yana (Sesli Sohbet). Herkes kendi telefonundan rolunu gorur,
+           kelimeler konusarak soylenir; oylama yoktur, oda sahibi "Oyunu Bitir"
+           ile Kamuflaji ve gizli kelimeyi herkese aciklar.
 * single : Tek telefon (elden ele). Tamamen istemci tarafinda calisir, sunucuda
            oda acilmaz; yalnizca /api/word ucundan rastgele kelime alir.
 
@@ -1070,12 +1071,12 @@ async def cmd_start_voting(room: Room, player: Player, data: Dict[str, Any], con
 
 
 async def cmd_end_round(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
-    """Yan yana modunda oda sahibi turu bitirir: oylama yok, dogrudan aciklama."""
+    """Yan Yana (Sesli Sohbet) modunda oda sahibi turu bitirir: oylama yok, dogrudan aciklama."""
     if player.id != room.host_id:
         await conn.send(error_payload("not_host", "Turu sadece oda sahibi bitirebilir."))
         return
     if room.mode != MODE_LOCAL:
-        await conn.send(error_payload("bad_mode", "Bu komut yan yana modu icindir."))
+        await conn.send(error_payload("bad_mode", "Bu komut Yan Yana (Sesli Sohbet) modu icindir."))
         return
     if room.phase != PHASE_TALKING:
         await conn.send(error_payload("bad_phase", "Su an bitirilecek bir tur yok."))

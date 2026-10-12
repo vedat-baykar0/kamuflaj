@@ -3,7 +3,8 @@
  *
  * 3 mod:
  *   online : WebSocket, ipucu kelimeleri ekrandan yazilir
- *   local  : WebSocket, roller telefonlarda gorunur, kelimeler yuz yuze soylenir
+ *   local  : Yan Yana (Sesli Sohbet) - WebSocket, roller telefonlarda gorunur,
+ *            kelimeler konusarak soylenir, oylama yok
  *   single : tek telefon, tamamen istemci tarafinda (WebSocket kullanmaz)
  */
 (function () {
@@ -120,7 +121,7 @@
   }
 
   function modeLabel(mode) {
-    if (mode === "local") { return "YAN YANA"; }
+    if (mode === "local") { return "YAN YANA · SESLİ"; }
     if (mode === "single") { return "TEK TELEFON"; }
     return "ONLINE";
   }
@@ -349,7 +350,7 @@
   function renderLobby(st) {
     el("lobby-code").textContent = st.code;
     el("lobby-mode-info").textContent = st.mode === "local"
-      ? "Yan yana modu: herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir. Oylama yok — tartışma bitince oda sahibi Kamuflaj'ı açıklar."
+      ? "Yan Yana (Sesli Sohbet) modu: herkes rolünü kendi telefonunda görür, kelimeler konuşarak söylenir. Oylama yok — tartışma bitince oda sahibi Kamuflaj'ı açıklar."
       : "Online mod: sırası gelen oyuncu ipucu kelimesini ekrana yazar, sonunda oylama ve tahmin yapılır.";
 
     el("lobby-rounds-wrap").classList.toggle("hidden", st.mode !== "online");
