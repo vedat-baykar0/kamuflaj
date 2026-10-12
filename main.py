@@ -1,26 +1,20 @@
 """
-Kamuflaj (Camouflage)
-=====================
+Kamuflaj (Camouflage) — gercek zamanli Imposter/Spyfall tarzi parti oyunu.
 
-Gercek zamanli, tarayici tabanli "Spyfall / Imposter" tarzi parti oyunu.
+Oyun modlari
+------------
+* online : Herkes kendi telefonundan oynar, ipucu kelimeleri ekrandan yazilir.
+* local  : Herkes kendi telefonundan rolunu gorur, kelimeler yuz yuze soylenir;
+           oda sahibi "Oylamaya Gec" butonuna basarak oylamayi baslatir.
+* single : Tek telefon (elden ele). Tamamen istemci tarafinda calisir, sunucuda
+           oda acilmaz; yalnizca /api/word ucundan rastgele kelime alir.
 
-Mimari
-------
-* FastAPI + tek bir WebSocket endpoint (`/ws`) uzerinden tum oyun trafigi.
-* Butun oyun durumu sunucu tarafinda (bellekte) tutulur; istemci yalnizca
-  kendisine ait kisisel bilgiyi (rol / gizli kelime) gorur. Kostebegin kimligi
-  oyun bitmeden ASLA diger oyunculara gonderilmez.
-* Her degisiklikten sonra her oyuncuya kisiselestirilmis bir tam durum
-  anlik goruntusu (`state`) yayinlanir. Bu sayede istemcide karmasik
-  "incremental update" mantigina ihtiyac kalmaz; yeniden baglanan oyuncu
-  aninda dogru ekrani gorur.
-* Oyuncular `player_id` + `token` ikilisiyle yeniden baglanabilir (sayfa
-  yenileme, mobil ag kopmasi, tunel degisimi vs.).
-
-Calistirma
-----------
-    pip install -r requirements.txt
-    uvicorn main:app --host 0.0.0.0 --port 8000
+Bellek yonetimi
+---------------
+* Oda sahibinin baglantisi koparsa (sekme kapandi, ag gitti, logoya basti) oda
+  ANINDA yok edilir; kalan oyunculara "room_closed" gonderilir.
+* Normal oyuncu koparsa sadece o oyuncu dusurulur, oyun devam eder.
+* Tamamen bos kalan odalar periyodik olarak temizlenir.
 """
 
 from __future__ import annotations
@@ -51,9 +45,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
-# Bazi yukleme yontemleri (GitHub web arayuzu, tek tek dosya gonderen API
-# scriptleri) klasor yapisini kaybedip her seyi kok dizine koyar. Bu durumda
-# TemplateNotFound almamak icin dosyalari kok dizinde de ariyoruz.
+# Duz (flat) yapi destegi: klasorler kaybolmussa dosyalari kok dizinde ara.
 if not (TEMPLATES_DIR / "index.html").is_file() and (BASE_DIR / "index.html").is_file():
     TEMPLATES_DIR = BASE_DIR
 if not (STATIC_DIR / "app.js").is_file() and (BASE_DIR / "app.js").is_file():
@@ -61,29 +53,32 @@ if not (STATIC_DIR / "app.js").is_file() and (BASE_DIR / "app.js").is_file():
 
 LAYOUT = "nested" if TEMPLATES_DIR != BASE_DIR else "flat"
 
-MIN_PLAYERS = 3                 # oyunu baslatmak icin gereken en az oyuncu
-MAX_PLAYERS = 12                # bir odadaki en fazla oyuncu
+MIN_PLAYERS = 3
+MAX_PLAYERS = 12
 MAX_NAME_LEN = 16
 ROOM_CODE_LEN = 4
-ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPRSTUVWXYZ23456789"  # I, O, Q gibi karisanlar yok
-ALLOWED_ROUNDS = (1, 2, 3, 4)   # oyuncu basina kac kelime soylenecek
+ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPRSTUVWXYZ23456789"
+ALLOWED_ROUNDS = (1, 2, 3, 4)
 DEFAULT_ROUNDS = 2
-GUESS_SECONDS = 45              # kostebegin kelimeyi tahmin suresi
-ROOM_IDLE_TTL = 1800.0          # tamamen bos odalar 30 dk sonra silinir
+GUESS_SECONDS = 45
+ROOM_IDLE_TTL = 900.0
 MAX_LOG_ENTRIES = 60
 MAX_ROOMS = 4000
 RATE_WINDOW = 5.0
 RATE_MAX_MESSAGES = 40
-RECENT_SECRET_MEMORY = 80       # oda basina tekrar edilmeyecek son kelime sayisi
+RECENT_SECRET_MEMORY = 120
 
-# Tek kelime kurali: yalnizca harf, 2-24 karakter (Turkce karakterler dahil)
 WORD_PATTERN = re.compile(r"^[^\W\d_]{2,24}$", re.UNICODE)
-# Normalizasyon: harf/rakam disindaki her sey atilir (bosluk, tire, noktalama)
 NON_WORD_PATTERN = re.compile(r"[^\w]", re.UNICODE)
 CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
+MODE_ONLINE = "online"
+MODE_LOCAL = "local"
+SERVER_MODES = (MODE_ONLINE, MODE_LOCAL)
+
 PHASE_LOBBY = "lobby"
 PHASE_PLAYING = "playing"
+PHASE_TALKING = "talking"
 PHASE_VOTING = "voting"
 PHASE_GUESSING = "guessing"
 PHASE_ENDED = "ended"
@@ -95,14 +90,12 @@ PHASE_ENDED = "ended"
 
 
 def normalize_word(text: Any) -> str:
-    """Kelime karsilastirmalari icin sadelestirilmis anahtar uretir."""
     if not isinstance(text, str):
         return ""
     return NON_WORD_PATTERN.sub("", tr_lower(text.strip()))
 
 
 def clean_name(raw: Any) -> str:
-    """Kullanici adini guvenli hale getirir (kontrol karakteri, uzunluk)."""
     if not isinstance(raw, str):
         return ""
     name = CONTROL_PATTERN.sub("", raw)
@@ -114,6 +107,10 @@ def clean_code(raw: Any) -> str:
     if not isinstance(raw, str):
         return ""
     return re.sub(r"[^A-Z0-9]", "", raw.strip().upper())[:ROOM_CODE_LEN]
+
+
+def clean_mode(raw: Any) -> str:
+    return raw if raw in SERVER_MODES else MODE_ONLINE
 
 
 def error_payload(code: str, message: str) -> Dict[str, Any]:
@@ -132,7 +129,7 @@ class Player:
     token: str
     ws: Optional[WebSocket] = None
     connected: bool = False
-    in_game: bool = False          # bu el icinde oynuyor mu (sonradan gelen: False)
+    in_game: bool = False
     score: int = 0
     joined_at: float = field(default_factory=time.time)
 
@@ -140,19 +137,20 @@ class Player:
 @dataclass
 class Room:
     code: str
+    mode: str = MODE_ONLINE
     host_id: Optional[str] = None
     players: Dict[str, Player] = field(default_factory=dict)
-    seats: List[str] = field(default_factory=list)           # katilim sirasi
+    seats: List[str] = field(default_factory=list)
     phase: str = PHASE_LOBBY
     rounds_total: int = DEFAULT_ROUNDS
-    order: List[str] = field(default_factory=list)            # tur sirasi (karisik)
+    order: List[str] = field(default_factory=list)
     turn_counter: int = 0
     round_no: int = 0
     secret_word: str = ""
     imposter_id: Optional[str] = None
     words: List[Dict[str, Any]] = field(default_factory=list)
     used_words: Set[str] = field(default_factory=set)
-    votes: Dict[str, str] = field(default_factory=dict)       # oy veren -> oylanan
+    votes: Dict[str, str] = field(default_factory=dict)
     guess_text: Optional[str] = None
     guess_deadline: Optional[float] = None
     guess_task: Optional[asyncio.Task] = None
@@ -164,7 +162,6 @@ class Room:
     last_active: float = field(default_factory=time.time)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    # -- yardimcilar ------------------------------------------------------
     def touch(self) -> None:
         self.last_active = time.time()
 
@@ -175,7 +172,6 @@ class Room:
         return [p for p in self.ordered_players() if p.connected]
 
     def active_players(self) -> List[Player]:
-        """Bu elde oynayan VE bagli olan oyuncular."""
         return [p for p in self.ordered_players() if p.in_game and p.connected]
 
     @property
@@ -202,7 +198,7 @@ class Room:
             candidate = f"{desired} ({i})"
             if tr_lower(candidate) not in taken:
                 return candidate
-        return f"{desired} ({secrets.randbelow(999)})"
+        return f"{desired} ({random.randint(100, 999)})"
 
 
 ROOMS: Dict[str, Room] = {}
@@ -210,8 +206,6 @@ ROOMS_LOCK = asyncio.Lock()
 
 
 class Connection:
-    """Tek bir WebSocket baglantisinin durumu."""
-
     __slots__ = ("ws", "room_code", "player_id", "_stamps")
 
     def __init__(self, ws: WebSocket) -> None:
@@ -236,13 +230,13 @@ class Connection:
 
 
 # ---------------------------------------------------------------------------
-# Durum serilestirme (her oyuncuya kisisel goruntu)
+# Durum serilestirme
 # ---------------------------------------------------------------------------
 
 
 def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
     finished = room.phase == PHASE_ENDED
-    in_round = room.phase in (PHASE_PLAYING, PHASE_VOTING, PHASE_GUESSING)
+    in_round = room.phase in (PHASE_PLAYING, PHASE_TALKING, PHASE_VOTING, PHASE_GUESSING)
     turn_id = room.current_turn_id()
 
     word_counts: Dict[str, int] = {}
@@ -261,7 +255,6 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
             "words": word_counts.get(p.id, 0),
             "is_turn": p.id == turn_id,
             "has_voted": p.id in room.votes,
-            # Kostebek kimligi yalnizca oyun bittiginde aciklanir.
             "is_imposter": finished and p.id == room.imposter_id,
             "is_you": p.id == viewer.id,
         })
@@ -281,6 +274,7 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
 
     state = {
         "code": room.code,
+        "mode": room.mode,
         "phase": room.phase,
         "host_id": room.host_id,
         "rounds_total": room.rounds_total,
@@ -311,6 +305,7 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
         "is_imposter": viewer_is_imposter,
         "secret_word": secret_for_viewer,
         "is_turn": turn_id == viewer.id,
+        "can_write_words": room.mode == MODE_ONLINE and turn_id == viewer.id,
         "voted_for": room.votes.get(viewer.id),
         "score": viewer.score,
         "can_vote": room.phase == PHASE_VOTING and viewer.in_game and viewer.connected,
@@ -327,7 +322,6 @@ async def send_to(player: Player, payload: Dict[str, Any]) -> None:
     try:
         await ws.send_text(json.dumps(payload, ensure_ascii=False))
     except Exception:
-        # Yalnizca hala bu sockete bagliysa dusur (coklu sekme durumu)
         if player.ws is ws:
             player.ws = None
             player.connected = False
@@ -353,7 +347,7 @@ def new_room_code() -> str:
         code = "".join(secrets.choice(ROOM_CODE_ALPHABET) for _ in range(ROOM_CODE_LEN))
         if code not in ROOMS:
             return code
-    while True:  # son care: kodu uzat
+    while True:
         code = "".join(secrets.choice(ROOM_CODE_ALPHABET) for _ in range(ROOM_CODE_LEN + 2))
         if code not in ROOMS:
             return code
@@ -364,6 +358,31 @@ def cancel_guess_timer(room: Room) -> None:
     room.guess_task = None
     if task is not None and not task.done():
         task.cancel()
+
+
+async def destroy_room(room: Room, reason: str) -> None:
+    """Odayi sunucudan tamamen siler ve kalan oyunculari ana sayfaya yollar."""
+    cancel_guess_timer(room)
+    ROOMS.pop(room.code, None)
+    targets = [p for p in room.players.values() if p.ws is not None]
+    if targets:
+        payload = {"type": "room_closed", "message": reason}
+        await asyncio.gather(
+            *(send_to(p, payload) for p in targets),
+            return_exceptions=True,
+        )
+    room.players.clear()
+    room.seats.clear()
+    room.votes.clear()
+    room.words.clear()
+    room.used_words.clear()
+    room.log.clear()
+    room.order.clear()
+    room.result = None
+    room.secret_word = ""
+    room.imposter_id = None
+    room.host_id = None
+    room.phase = PHASE_LOBBY
 
 
 def reset_to_lobby(room: Room) -> None:
@@ -385,7 +404,6 @@ def reset_to_lobby(room: Room) -> None:
 
 
 def start_game(room: Room) -> Optional[str]:
-    """Yeni bir el baslatir. Hata varsa kullaniciya gosterilecek metni dondurur."""
     candidates = room.connected_players()
     if len(candidates) < MIN_PLAYERS:
         return f"Oyunu baslatmak icin en az {MIN_PLAYERS} bagli oyuncu gerekli."
@@ -410,22 +428,28 @@ def start_game(room: Room) -> Optional[str]:
     room.guess_deadline = None
     room.result = None
     room.turn_counter = 0
-    room.round_no = 1
-    room.phase = PHASE_PLAYING
     room.games_played += 1
     room.log = []
-    room.add_log(
-        f"Yeni oyun basladi. {len(order)} oyuncu, kisi basi {room.rounds_total} kelime.",
-        "start",
-    )
-    first = room.players.get(order[0])
-    if first is not None:
-        room.add_log(f"Ilk sira: {first.name}", "turn")
+
+    if room.mode == MODE_LOCAL:
+        room.phase = PHASE_TALKING
+        room.round_no = 0
+        room.add_log(f"Roller dagitildi ({len(order)} oyuncu).", "start")
+        room.add_log("Kelimeleri yuz yuze soyleyin. Tur bitince oda sahibi oylamayi baslatir.", "turn")
+    else:
+        room.phase = PHASE_PLAYING
+        room.round_no = 1
+        room.add_log(
+            f"Yeni oyun basladi. {len(order)} oyuncu, kisi basi {room.rounds_total} kelime.",
+            "start",
+        )
+        first = room.players.get(order[0])
+        if first is not None:
+            room.add_log(f"Ilk sira: {first.name}", "turn")
     return None
 
 
 def advance_turn(room: Room) -> None:
-    """Sirayi sonraki bagli oyuncuya gecirir; tum turlar bittiyse oylamaya gecer."""
     total = room.total_turns
     size = len(room.order)
     if size == 0:
@@ -448,7 +472,7 @@ def advance_turn(room: Room) -> None:
 def begin_voting(room: Room) -> None:
     room.phase = PHASE_VOTING
     room.votes = {}
-    room.add_log("Kelime turlari bitti, oylama basladi!", "vote")
+    room.add_log("Oylama basladi!", "vote")
     if len(room.active_players()) < 2 or room.imposter_id not in room.players:
         abort_game(room, "Yeterli oyuncu kalmadigi icin oyun iptal edildi.")
 
@@ -471,7 +495,7 @@ def begin_guess_phase(room: Room) -> None:
     room.phase = PHASE_GUESSING
     room.guess_deadline = time.time() + GUESS_SECONDS
     room.add_log(
-        f"Oylar toplandi. Kamuflaj'in gizli kelimeyi tahmin etmesi icin {GUESS_SECONDS} saniyesi var.",
+        f"Oylar toplandi. Kamuflaj'in tahmin etmesi icin {GUESS_SECONDS} saniyesi var.",
         "guess",
     )
     cancel_guess_timer(room)
@@ -495,7 +519,6 @@ async def guess_timeout(room_code: str) -> None:
 
 
 def finish_game(room: Room, guess: Optional[str]) -> None:
-    """Oylari sayar, kazanani belirler, puanlari dagitir ve sonucu olusturur."""
     cancel_guess_timer(room)
     room.guess_deadline = None
 
@@ -526,8 +549,6 @@ def finish_game(room: Room, guess: Optional[str]) -> None:
     guess_correct = bool(guess_norm) and guess_norm == normalize_word(room.secret_word)
     room.guess_text = guess_clean or None
 
-    # Kostebek dogru tahmin ederse her kosulda kazanir; aksi halde cogunluk
-    # onu dogru bulduysa dedektifler kazanir.
     winner = "crew" if (caught and not guess_correct) else "imposter"
 
     imposter = room.players.get(room.imposter_id or "")
@@ -606,7 +627,6 @@ def remove_player(room: Room, player: Player) -> None:
 
 
 def repair_room(room: Room) -> None:
-    """Oyuncu ayrilma / baglanti kopmasi sonrasi oda durumunu tutarli yapar."""
     if room.host_id not in room.players:
         new_host = next((p.id for p in room.ordered_players() if p.connected), None)
         if new_host is None and room.seats:
@@ -623,6 +643,9 @@ def repair_room(room: Room) -> None:
         current = room.players.get(room.current_turn_id() or "")
         if current is None or not current.connected or not current.in_game:
             advance_turn(room)
+    elif room.phase == PHASE_TALKING:
+        if len(room.active_players()) < 2 or room.imposter_id not in room.players:
+            abort_game(room, "Oyuncu sayisi yetersiz kaldi, oyun lobiye dondu.")
     elif room.phase == PHASE_VOTING:
         if len(room.active_players()) < 2 or room.imposter_id not in room.players:
             abort_game(room, "Oyuncu sayisi yetersiz kaldi, oyun lobiye dondu.")
@@ -644,7 +667,7 @@ def repair_room(room: Room) -> None:
 
 
 async def detach_connection(conn: Connection) -> None:
-    """Bu baglanti bir odaya bagliysa oradan ayirir ve odayi onarir."""
+    """Baglanti kopunca: host ise oda silinir, normal oyuncu ise sadece dusurulur."""
     if conn.room_code is None or conn.player_id is None:
         return
     room = ROOMS.get(conn.room_code)
@@ -655,10 +678,20 @@ async def detach_connection(conn: Connection) -> None:
         return
     async with room.lock:
         player = room.players.get(old_player_id)
-        if player is None or player.ws is not conn.ws:
+        if player is None:
+            return
+        # Oyuncu baska bir canli socket (ornegin ikinci sekme) ile hala bagliysa
+        # bu kopmayi yok say. player.ws None ise (daha once yazma hatasiyla
+        # dusurulmusse) islemeye devam ediyoruz: host odasi mutlaka silinmeli.
+        if player.ws is not None and player.ws is not conn.ws:
             return
         player.ws = None
         player.connected = False
+
+        if player.id == room.host_id:
+            await destroy_room(room, "Oda sahibi ayrildigi icin oda kapatildi.")
+            return
+
         if room.phase == PHASE_LOBBY:
             remove_player(room, player)
             room.add_log(f"{player.name} ayrildi.", "warn")
@@ -673,6 +706,7 @@ async def handle_create_room(conn: Connection, data: Dict[str, Any]) -> None:
     if not name:
         await conn.send(error_payload("bad_name", "Gecerli bir kullanici adi gir."))
         return
+    mode = clean_mode(data.get("mode"))
     rounds = data.get("rounds", DEFAULT_ROUNDS)
     if not isinstance(rounds, int) or rounds not in ALLOWED_ROUNDS:
         rounds = DEFAULT_ROUNDS
@@ -682,7 +716,7 @@ async def handle_create_room(conn: Connection, data: Dict[str, Any]) -> None:
             await conn.send(error_payload("server_busy", "Sunucu su an cok yogun, biraz sonra dene."))
             return
         code = new_room_code()
-        room = Room(code=code, rounds_total=rounds)
+        room = Room(code=code, mode=mode, rounds_total=rounds)
         ROOMS[code] = room
 
     await detach_connection(conn)
@@ -705,6 +739,7 @@ async def handle_create_room(conn: Connection, data: Dict[str, Any]) -> None:
         await conn.send({
             "type": "joined",
             "code": room.code,
+            "mode": room.mode,
             "player_id": player.id,
             "token": player.token,
             "name": player.name,
@@ -728,6 +763,10 @@ async def handle_join_room(conn: Connection, data: Dict[str, Any]) -> None:
 
     await detach_connection(conn)
 
+    if ROOMS.get(code) is not room:
+        await conn.send(error_payload("room_not_found", "Oda kapatilmis."))
+        return
+
     async with room.lock:
         if len(room.players) >= MAX_PLAYERS:
             await conn.send(error_payload("room_full", f"Oda dolu (en fazla {MAX_PLAYERS} oyuncu)."))
@@ -743,7 +782,7 @@ async def handle_join_room(conn: Connection, data: Dict[str, Any]) -> None:
         room.seats.append(player.id)
         if room.host_id is None:
             room.host_id = player.id
-        if room.phase in (PHASE_PLAYING, PHASE_VOTING, PHASE_GUESSING):
+        if room.phase in (PHASE_PLAYING, PHASE_TALKING, PHASE_VOTING, PHASE_GUESSING):
             player.in_game = False
             room.add_log(f"{player.name} katildi (bu el izleyici, sonraki ele dahil).", "join")
         else:
@@ -754,6 +793,7 @@ async def handle_join_room(conn: Connection, data: Dict[str, Any]) -> None:
         await conn.send({
             "type": "joined",
             "code": room.code,
+            "mode": room.mode,
             "player_id": player.id,
             "token": player.token,
             "name": player.name,
@@ -772,6 +812,10 @@ async def handle_rejoin(conn: Connection, data: Dict[str, Any]) -> None:
 
     await detach_connection(conn)
 
+    if ROOMS.get(code) is not room:
+        await conn.send(error_payload("session_invalid", "Oda kapatilmis."))
+        return
+
     async with room.lock:
         player = room.players.get(player_id)
         if player is None or not secrets.compare_digest(player.token, token):
@@ -780,8 +824,6 @@ async def handle_rejoin(conn: Connection, data: Dict[str, Any]) -> None:
         was_offline = not player.connected
         player.ws = conn.ws
         player.connected = True
-        if room.host_id is None:
-            room.host_id = player.id
         conn.room_code = room.code
         conn.player_id = player.id
         if was_offline:
@@ -790,6 +832,7 @@ async def handle_rejoin(conn: Connection, data: Dict[str, Any]) -> None:
         await conn.send({
             "type": "joined",
             "code": room.code,
+            "mode": room.mode,
             "player_id": player.id,
             "token": player.token,
             "name": player.name,
@@ -828,6 +871,9 @@ async def cmd_start_game(room: Room, player: Player, data: Dict[str, Any], conn:
 
 
 async def cmd_submit_word(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    if room.mode != MODE_ONLINE:
+        await conn.send(error_payload("bad_mode", "Bu modda kelimeler yuz yuze soyleniyor."))
+        return
     if room.phase != PHASE_PLAYING:
         await conn.send(error_payload("bad_phase", "Su an kelime yazma sirasi degil."))
         return
@@ -849,8 +895,12 @@ async def cmd_submit_word(room: Room, player: Player, data: Dict[str, Any], conn
     if not key:
         await conn.send(error_payload("bad_word", "Gecerli bir kelime yaz."))
         return
-    if key == normalize_word(room.secret_word):
-        await conn.send(error_payload("secret_word", "Gizli kelimenin kendisini yazamazsin!"))
+    # Gizli kelimenin kendisi ve (tamlama ise) parcalari yazilamaz.
+    forbidden = {normalize_word(room.secret_word)}
+    forbidden.update(normalize_word(part) for part in room.secret_word.split())
+    forbidden.discard("")
+    if key in forbidden:
+        await conn.send(error_payload("secret_word", "Gizli kelimenin kendisini veya bir parcasini yazamazsin!"))
         return
     if key in room.used_words:
         await conn.send(error_payload("duplicate_word", "Bu kelime bu oyunda daha once kullanildi."))
@@ -921,12 +971,11 @@ async def cmd_skip_guess(room: Room, player: Player, data: Dict[str, Any], conn:
 
 
 async def cmd_skip_turn(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
-    """Oda sahibi AFK oyuncunun sirasini atlayabilir."""
     if player.id != room.host_id:
         await conn.send(error_payload("not_host", "Sadece oda sahibi sirayi atlayabilir."))
         return
     if room.phase != PHASE_PLAYING:
-        await conn.send(error_payload("bad_phase", "Su an oyun turu yok."))
+        await conn.send(error_payload("bad_phase", "Su an kelime turu yok."))
         return
     skipped = room.players.get(room.current_turn_id() or "")
     if skipped is not None:
@@ -934,16 +983,17 @@ async def cmd_skip_turn(room: Room, player: Player, data: Dict[str, Any], conn: 
     advance_turn(room)
 
 
-async def cmd_force_vote(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
-    """Oda sahibi kelime turlarini erken bitirip oylamaya gecebilir."""
+async def cmd_start_voting(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
+    """Oda sahibi konusma/kelime turunu bitirip oylamaya gecer."""
     if player.id != room.host_id:
         await conn.send(error_payload("not_host", "Sadece oda sahibi oylamayi baslatabilir."))
         return
-    if room.phase != PHASE_PLAYING:
-        await conn.send(error_payload("bad_phase", "Su an oyun turu yok."))
+    if room.phase not in (PHASE_PLAYING, PHASE_TALKING):
+        await conn.send(error_payload("bad_phase", "Su an oylamaya gecilemez."))
         return
     room.turn_counter = room.total_turns
-    room.add_log("Oda sahibi oylamayi erken baslatti.", "warn")
+    if room.phase == PHASE_PLAYING:
+        room.add_log("Oda sahibi oylamayi erken baslatti.", "warn")
     begin_voting(room)
 
 
@@ -975,12 +1025,16 @@ async def cmd_kick(room: Room, player: Player, data: Dict[str, Any], conn: Conne
 
 
 async def cmd_leave(room: Room, player: Player, data: Dict[str, Any], conn: Connection) -> None:
-    room.add_log(f"{player.name} odadan ayrildi.", "warn")
-    remove_player(room, player)
     conn.room_code = None
     conn.player_id = None
-    repair_room(room)
     await conn.send({"type": "left"})
+    if player.id == room.host_id:
+        remove_player(room, player)
+        await destroy_room(room, "Oda sahibi ayrildigi icin oda kapatildi.")
+        return
+    room.add_log(f"{player.name} odadan ayrildi.", "warn")
+    remove_player(room, player)
+    repair_room(room)
 
 
 COMMANDS = {
@@ -991,7 +1045,8 @@ COMMANDS = {
     "guess": cmd_guess,
     "skip_guess": cmd_skip_guess,
     "skip_turn": cmd_skip_turn,
-    "force_vote": cmd_force_vote,
+    "start_voting": cmd_start_voting,
+    "force_vote": cmd_start_voting,
     "play_again": cmd_play_again,
     "kick": cmd_kick,
     "leave": cmd_leave,
@@ -1033,7 +1088,8 @@ async def handle_message(conn: Connection, data: Dict[str, Any]) -> None:
     async with room.lock:
         room.touch()
         await handler(room, player, data, conn)
-        await broadcast_state(room)
+        if ROOMS.get(room.code) is room:
+            await broadcast_state(room)
 
 
 # ---------------------------------------------------------------------------
@@ -1042,7 +1098,6 @@ async def handle_message(conn: Connection, data: Dict[str, Any]) -> None:
 
 
 async def room_pruner() -> None:
-    """Tamamen bos kalan odalari periyodik olarak temizler."""
     while True:
         try:
             await asyncio.sleep(60)
@@ -1057,6 +1112,8 @@ async def room_pruner() -> None:
                     room = ROOMS.pop(code, None)
                     if room is not None:
                         cancel_guess_timer(room)
+                        room.players.clear()
+                        room.seats.clear()
         except asyncio.CancelledError:
             return
         except Exception:
@@ -1098,14 +1155,11 @@ if not (STATIC_DIR / "app.js").is_file():
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-# app.js'i her iki yerlesimde de ayni URL'den servis et.
 @app.get("/static/app.js", include_in_schema=False)
 async def serve_app_js():
     return FileResponse(STATIC_DIR / "app.js", media_type="application/javascript")
 
 
-# Gercek bir static/ klasoru varsa diger dosyalar icin de mount et. Duz
-# yerlesimde kok dizini mount etmiyoruz (kaynak kodu servis etmesin).
 if STATIC_DIR != BASE_DIR and STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -1132,9 +1186,14 @@ async def healthz():
         "players": sum(len(r.players) for r in ROOMS.values()),
         "words": len(WORDS),
         "layout": LAYOUT,
-        "template_dir": TEMPLATES_DIR.name if TEMPLATES_DIR != BASE_DIR else ".",
-        "static_dir": STATIC_DIR.name if STATIC_DIR != BASE_DIR else ".",
     })
+
+
+@app.get("/api/word")
+async def api_word(exclude: str = ""):
+    """Tek telefon modu icin rastgele kelime."""
+    recent = [item for item in exclude.split(",") if item.strip()] if exclude else []
+    return JSONResponse({"word": pick_word(recent), "pool": len(WORDS)})
 
 
 @app.get("/api/room/{code}")
@@ -1145,6 +1204,7 @@ async def room_info(code: str):
     return JSONResponse({
         "exists": True,
         "code": room.code,
+        "mode": room.mode,
         "phase": room.phase,
         "players": len(room.players),
         "max_players": MAX_PLAYERS,

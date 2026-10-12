@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-<meta name="theme-color" content="#0b1120" />
-<meta name="description" content="Kamuflaj - arkadaslarinla tarayicidan oynanan gercek zamanli gizli kelime / kostebek oyunu." />
+<meta name="theme-color" content="#070b16" />
+<meta name="description" content="Kamuflaj - arkadaslarinla oynanan gizli kelime / kostebek bulma oyunu. Online, yan yana ve tek telefon modlari." />
 <title>Kamuflaj — Köstebeği Bul</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%95%B5%EF%B8%8F%3C/text%3E%3C/svg%3E" />
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
@@ -12,19 +12,12 @@
   tailwind.config = {
     theme: {
       extend: {
-        colors: {
-          ink: "#070b16",
-          panel: "#101829",
-          edge: "#1e293b"
-        },
+        colors: { ink: "#070b16", panel: "#101829", edge: "#1e293b" },
         keyframes: {
           pop: { "0%": { transform: "scale(.94)", opacity: "0" }, "100%": { transform: "scale(1)", opacity: "1" } },
           slide: { "0%": { transform: "translateY(10px)", opacity: "0" }, "100%": { transform: "translateY(0)", opacity: "1" } }
         },
-        animation: {
-          pop: "pop .18s ease-out",
-          slide: "slide .22s ease-out"
-        }
+        animation: { pop: "pop .18s ease-out", slide: "slide .22s ease-out" }
       }
     }
   };
@@ -35,10 +28,11 @@
   .scroll-thin::-webkit-scrollbar { width: 7px; height: 7px; }
   .scroll-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
   .scroll-thin::-webkit-scrollbar-track { background: transparent; }
-  .blurred { filter: blur(12px); user-select: none; }
+  .blurred { filter: blur(14px); user-select: none; }
   .code-font { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .25em; }
   .glow-red { box-shadow: 0 0 0 1px rgba(248,113,113,.4), 0 18px 50px -20px rgba(239,68,68,.65); }
   .glow-green { box-shadow: 0 0 0 1px rgba(52,211,153,.4), 0 18px 50px -20px rgba(16,185,129,.6); }
+  .mode-card[data-selected="1"] { border-color: rgb(16 185 129 / .8); background: rgb(16 185 129 / .12); }
   input, select, button, textarea { font-family: inherit; }
   input:focus, select:focus { outline: none; }
   .tap { -webkit-tap-highlight-color: transparent; }
@@ -52,21 +46,21 @@
   <div class="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-rose-600/10 blur-3xl"></div>
 </div>
 
-<!-- ÜST BAR -->
 <header class="sticky top-0 z-30 border-b border-edge/70 bg-ink/80 backdrop-blur">
   <div class="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-    <div class="flex items-center gap-2">
+    <button id="btn-home" title="Ana sayfaya dön (odadan çık)"
+            class="tap flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-white/5 active:scale-95">
       <span class="text-xl">🕵️</span>
       <span class="text-lg font-black tracking-tight">Kamuflaj</span>
-    </div>
-    <div id="room-chip" class="hidden items-center gap-2 rounded-full border border-edge bg-panel px-3 py-1 text-xs sm:flex">
+    </button>
+    <div id="room-chip" class="hidden items-center gap-2 rounded-full border border-edge bg-panel px-3 py-1 text-xs">
       <span class="text-slate-400">Oda</span>
       <span id="room-chip-code" class="code-font font-bold text-emerald-400">----</span>
+      <span id="room-chip-mode" class="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-slate-300"></span>
     </div>
     <div class="ml-auto flex items-center gap-2">
       <button id="btn-copy-link" class="tap hidden rounded-lg border border-edge bg-panel px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-emerald-500/60 hover:text-emerald-300">🔗 Davet</button>
-      <button id="btn-leave" class="tap hidden rounded-lg border border-edge bg-panel px-2.5 py-1.5 text-xs font-semibold text-rose-300 transition hover:border-rose-500/60">Çık</button>
-      <div class="flex items-center gap-1.5 rounded-full border border-edge bg-panel px-2.5 py-1.5">
+      <div id="conn-wrap" class="flex items-center gap-1.5 rounded-full border border-edge bg-panel px-2.5 py-1.5">
         <span id="conn-dot" class="h-2 w-2 rounded-full bg-amber-400"></span>
         <span id="conn-text" class="text-[11px] font-medium text-slate-400">bağlanıyor</span>
       </div>
@@ -76,51 +70,92 @@
 
 <main class="mx-auto w-full max-w-6xl px-4 pb-24 pt-6">
 
-  <!-- ============ GİRİŞ EKRANI ============ -->
+  <!-- ============ GİRİŞ ============ -->
   <section id="screen-home" class="hidden">
     <div class="mx-auto max-w-xl">
       <div class="mb-6 text-center">
         <h1 class="text-3xl font-black tracking-tight sm:text-4xl">Köstebeği bul, kelimeyi koru.</h1>
         <p class="mt-2 text-sm text-slate-400">
-          Herkese gizli bir kelime verilir — biri hariç. Sırayla birer kelime söyleyin,
-          sonra oylayın. <span class="text-slate-300">{{ word_count }}</span> zorlu kelimeden rastgele seçim.
+          Herkese gizli bir kelime verilir — biri hariç.
+          <span class="text-slate-300">{{ word_count }}</span> günlük kelimeden rastgele seçim.
         </p>
       </div>
 
-      <div class="animate-pop rounded-2xl border border-edge bg-panel/80 p-5 shadow-2xl backdrop-blur">
-        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">Kullanıcı adın</label>
-        <input id="input-name" type="text" maxlength="16" autocomplete="nickname" placeholder="örn. Vedat"
-               class="w-full rounded-xl border border-edge bg-ink/70 px-4 py-3 text-base font-semibold placeholder:text-slate-600 focus:border-emerald-500/70 focus:ring-2 focus:ring-emerald-500/20" />
+      <div class="animate-pop space-y-5 rounded-2xl border border-edge bg-panel/80 p-5 shadow-2xl backdrop-blur">
 
-        <div class="mt-5 grid gap-3 sm:grid-cols-2">
-          <!-- ODA KUR -->
+        <div>
+          <p class="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">1 · Nasıl oynuyorsunuz?</p>
+          <div class="grid gap-2">
+            <button data-mode="online" data-selected="1"
+                    class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
+              <span class="block text-sm font-bold text-slate-100">📱 Uzaktan (Online)</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Herkes kendi telefonundan. İpucu kelimeleri ekrana yazılır.</span>
+            </button>
+            <button data-mode="local"
+                    class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
+              <span class="block text-sm font-bold text-slate-100">🗣️ Yan Yana (Çoklu telefon)</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Herkes rolünü kendi telefonunda görür, kelimeler sesli söylenir.</span>
+            </button>
+            <button data-mode="single"
+                    class="mode-card tap rounded-xl border border-edge bg-ink/40 p-3 text-left transition hover:border-emerald-500/50">
+              <span class="block text-sm font-bold text-slate-100">🤝 Elden Ele (Tek telefon)</span>
+              <span class="mt-0.5 block text-xs text-slate-400">Tek cihaz yeter. İsimleri gir, telefon sırayla elden ele dolaşır.</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="home-name-wrap">
+          <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-400">2 · Kullanıcı adın</label>
+          <input id="input-name" type="text" maxlength="16" autocomplete="nickname" placeholder="örn. Vedat"
+                 class="w-full rounded-xl border border-edge bg-ink/70 px-4 py-3 text-base font-semibold placeholder:text-slate-600 focus:border-emerald-500/70 focus:ring-2 focus:ring-emerald-500/20" />
+        </div>
+
+        <div id="home-ws">
           <div class="rounded-xl border border-edge bg-ink/40 p-4">
-            <h3 class="text-sm font-bold text-emerald-300">Oda Kur</h3>
-            <p class="mt-1 text-xs text-slate-400">Yeni bir oda aç, kodu arkadaşlarına gönder.</p>
-            <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Kişi başı kelime</label>
-            <select id="select-rounds-home"
-                    class="mt-1 w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm font-semibold text-slate-200">
-              <option value="1">1 kelime</option>
-              <option value="2" selected>2 kelime</option>
-              <option value="3">3 kelime</option>
-              <option value="4">4 kelime</option>
-            </select>
+            <div id="home-rounds-wrap" class="mb-3">
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Kişi başı kelime</label>
+              <select id="select-rounds-home"
+                      class="mt-1 w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm font-semibold text-slate-200">
+                <option value="1">1 kelime</option>
+                <option value="2" selected>2 kelime</option>
+                <option value="3">3 kelime</option>
+                <option value="4">4 kelime</option>
+              </select>
+            </div>
             <button id="btn-create"
-                    class="tap mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">
+                    class="tap w-full rounded-xl bg-emerald-500 px-4 py-3.5 text-sm font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">
               Oda Kur
             </button>
           </div>
 
-          <!-- ODAYA KATIL -->
+          <div class="my-3 flex items-center gap-3">
+            <div class="h-px flex-1 bg-edge"></div>
+            <span class="text-xs font-bold text-slate-500">veya</span>
+            <div class="h-px flex-1 bg-edge"></div>
+          </div>
+
           <div class="rounded-xl border border-edge bg-ink/40 p-4">
-            <h3 class="text-sm font-bold text-indigo-300">Odaya Katıl</h3>
-            <p class="mt-1 text-xs text-slate-400">Arkadaşının verdiği 4 haneli kodu gir.</p>
-            <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Oda kodu</label>
-            <input id="input-code" type="text" maxlength="4" inputmode="text" autocapitalize="characters" placeholder="ABCD"
-                   class="code-font mt-1 w-full rounded-lg border border-edge bg-panel px-3 py-2 text-center text-lg font-bold uppercase text-indigo-200 placeholder:text-slate-600 focus:border-indigo-500/70" />
-            <button id="btn-join"
-                    class="tap mt-3 w-full rounded-xl bg-indigo-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-indigo-400 active:scale-[.98]">
-              Katıl
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Oda kodu ile katıl</label>
+            <div class="mt-1 flex gap-2">
+              <input id="input-code" type="text" maxlength="4" autocapitalize="characters" placeholder="ABCD"
+                     class="code-font w-full rounded-lg border border-edge bg-panel px-3 py-2.5 text-center text-lg font-bold uppercase text-indigo-200 placeholder:text-slate-600 focus:border-indigo-500/70" />
+              <button id="btn-join"
+                      class="tap shrink-0 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">
+                Katıl
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="home-single" class="hidden">
+          <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+            <p class="text-sm text-slate-300">
+              Bu modda kimsenin siteye girmesine gerek yok. Oyuncu isimlerini sen gireceksin,
+              telefon sırayla elden ele dolaşacak.
+            </p>
+            <button id="btn-single-start"
+                    class="tap mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3.5 text-sm font-black text-emerald-950 transition hover:bg-emerald-400 active:scale-[.98]">
+              Oyuncuları Gir
             </button>
           </div>
         </div>
@@ -129,19 +164,20 @@
       <details class="mt-5 rounded-2xl border border-edge bg-panel/60 p-4 text-sm text-slate-300">
         <summary class="cursor-pointer font-bold text-slate-200">Nasıl oynanır?</summary>
         <ol class="mt-3 list-decimal space-y-2 pl-5 text-slate-400">
-          <li>En az <b class="text-slate-200">{{ min_players }}</b>, en fazla <b class="text-slate-200">{{ max_players }}</b> oyuncu aynı odaya girer.</li>
-          <li>Oyun başlayınca herkese aynı <b class="text-emerald-300">gizli kelime</b> verilir — rastgele seçilen bir kişi hariç. O kişi <b class="text-rose-300">Kamuflaj</b>'dır.</li>
-          <li>Sırayla herkes kelimeyi <b class="text-slate-200">çağrıştıran tek bir kelime</b> söyler. Çok açık söylersen Kamuflaj kelimeyi bulur; çok kapalı söylersen sen şüpheli olursun.</li>
-          <li>Aynı kelime bir oyunda <b class="text-slate-200">iki kez</b> kullanılamaz, gizli kelimenin kendisi de yazılamaz.</li>
-          <li>Turlar bitince oylama açılır. Çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır.</li>
-          <li>Ama Kamuflaj, {{ guess_seconds }} saniye içinde gizli kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile o kazanır.</li>
+          <li><b class="text-slate-200">{{ min_players }}</b>–<b class="text-slate-200">{{ max_players }}</b> oyuncu. Herkese aynı gizli kelime verilir, rastgele bir kişi hariç: o <b class="text-rose-300">Kamuflaj</b>'dır.</li>
+          <li>Sırayla herkes kelimeyi çağrıştıran <b class="text-slate-200">tek bir kelime</b> söyler. Çok açık söylersen Kamuflaj kelimeyi bulur, çok kapalı söylersen şüpheli olursun.</li>
+          <li>Tur bitince oylama açılır. Çoğunluk Kamuflaj'ı doğru bulursa <b class="text-emerald-300">Dedektifler</b> kazanır.</li>
+          <li>Kamuflaj, {{ guess_seconds }} saniyede gizli kelimeyi <b class="text-rose-300">tek seferde</b> doğru tahmin ederse yakalansa bile kazanır.</li>
+          <li>Puanlama: Dedektifler kazanırsa her dedektif +2. Kamuflaj kazanırsa +2 (doğru tahminle +3); onu doğru oylayan dedektifler +1.</li>
+          <li>Sol üstteki <b class="text-slate-200">Kamuflaj</b> logosuna basmak odadan çıkarır. Oda sahibi çıkarsa oda kapanır.</li>
         </ol>
-        <p class="mt-3 border-t border-edge pt-3 text-xs text-slate-500">
-          Puanlama: Dedektifler kazanırsa her dedektif +2. Kamuflaj kazanırsa +2 (doğru tahminle +3),
-          ayrıca onu doğru oylayan her dedektif +1 alır.
-        </p>
       </details>
     </div>
+  </section>
+
+  <!-- ============ TEK TELEFON (ELDEN ELE) ============ -->
+  <section id="screen-single" class="hidden">
+    <div id="single-panel" class="mx-auto max-w-xl"></div>
   </section>
 
   <!-- ============ LOBİ ============ -->
@@ -149,18 +185,18 @@
     <div class="grid gap-5 lg:grid-cols-5">
       <div class="lg:col-span-3">
         <div class="animate-pop rounded-2xl border border-edge bg-panel/80 p-5">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Oda kodu</p>
+          <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Oda kodu</p>
           <div class="mt-2 flex flex-wrap items-center gap-3">
             <div id="lobby-code" class="code-font rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-3 text-3xl font-black text-emerald-300">----</div>
             <button id="btn-copy-code" class="tap rounded-xl border border-edge bg-ink px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-emerald-500/60">Kodu kopyala</button>
             <button id="btn-copy-link2" class="tap rounded-xl border border-edge bg-ink px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-emerald-500/60">Davet linki</button>
           </div>
-          <p class="mt-3 text-sm text-slate-400">Bu kodu arkadaşlarına gönder. Herkes girdiğinde oda sahibi oyunu başlatır.</p>
+          <p id="lobby-mode-info" class="mt-3 text-sm text-slate-400"></p>
 
           <div class="mt-5 rounded-xl border border-edge bg-ink/40 p-4">
-            <div class="flex flex-wrap items-end gap-3">
+            <div id="lobby-rounds-wrap" class="flex flex-wrap items-end gap-3">
               <div>
-                <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Kişi başı kelime</label>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Kişi başı kelime</label>
                 <select id="select-rounds"
                         class="mt-1 rounded-lg border border-edge bg-panel px-3 py-2 text-sm font-semibold text-slate-200 disabled:opacity-50">
                   <option value="1">1 kelime</option>
@@ -169,7 +205,7 @@
                   <option value="4">4 kelime</option>
                 </select>
               </div>
-              <p id="rounds-hint" class="pb-2 text-xs text-slate-500">Ayarı sadece oda sahibi değiştirebilir.</p>
+              <p id="rounds-hint" class="pb-2 text-xs text-slate-500"></p>
             </div>
             <button id="btn-start"
                     class="tap mt-4 w-full rounded-xl bg-emerald-500 px-4 py-4 text-base font-black text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">
@@ -179,7 +215,6 @@
           </div>
         </div>
       </div>
-
       <div class="lg:col-span-2">
         <div id="lobby-players" class="rounded-2xl border border-edge bg-panel/80 p-5"></div>
         <div id="lobby-log" class="mt-4 rounded-2xl border border-edge bg-panel/60 p-4"></div>
@@ -205,13 +240,12 @@
 
 </main>
 
-<!-- TOAST -->
 <div id="toasts" class="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4"></div>
 
 <footer class="border-t border-edge/60 py-5 text-center text-[11px] text-slate-600">
-  Kamuflaj · {{ word_count }} kelimelik havuz · FastAPI + WebSocket
+  Kamuflaj · {{ word_count }} kelime · FastAPI + WebSocket
 </footer>
 
-<script src="/static/app.js?v=1"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
