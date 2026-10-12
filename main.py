@@ -283,8 +283,9 @@ def serialize_for(room: Room, viewer: Player) -> Dict[str, Any]:
     secret_for_viewer: Optional[str] = None
     hint_for_viewer: Optional[str] = None
     if finished:
+        # Tur bitiminde gizli kelime herkese acilir, ipucu ACILMAZ:
+        # ipucunu oyunun hicbir aninda Kamuflaj disinda kimse gormez.
         secret_for_viewer = room.secret_word or None
-        hint_for_viewer = room.secret_hint or None
     elif in_round and viewer.in_game:
         # Tur sirasinda ipucu YALNIZCA Kamuflaj'a gider: dedektifler gizli
         # kelimeyi, Kamuflaj ise onun yerine genel ipucunu gorur. Dedektife
@@ -631,7 +632,6 @@ def finish_game(room: Room, guess: Optional[str]) -> None:
         "imposter_id": room.imposter_id,
         "imposter_name": imposter.name if imposter is not None else "(ayrilmis oyuncu)",
         "secret_word": room.secret_word,
-        "secret_hint": room.secret_hint,
         "guess": room.guess_text,
         "guess_correct": guess_correct,
         "caught": caught,
@@ -660,7 +660,6 @@ def finish_reveal(room: Room) -> None:
         "imposter_id": room.imposter_id,
         "imposter_name": imposter.name if imposter is not None else "(ayrılmış oyuncu)",
         "secret_word": room.secret_word,
-        "secret_hint": room.secret_hint,
         "guess": None,
         "guess_correct": False,
         "caught": False,

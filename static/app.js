@@ -351,7 +351,7 @@
     el("lobby-code").textContent = st.code;
     el("lobby-mode-info").textContent = st.mode === "local"
       ? "Yan Yana (Sesli Sohbet) modu: herkes rolünü kendi telefonunda görür, kelimeler konuşarak söylenir. Oylama yok — tartışma bitince oda sahibi Kamuflaj'ı açıklar."
-      : "Online mod: sırası gelen oyuncu ipucu kelimesini ekrana yazar, sonunda oylama ve tahmin yapılır.";
+      : "Online mod: sırası gelen oyuncu çağrışım kelimesini ekrana yazar, sonunda oylama ve tahmin yapılır.";
 
     el("lobby-rounds-wrap").classList.toggle("hidden", st.mode !== "online");
     var select = el("select-rounds");
@@ -417,25 +417,21 @@
   }
 
   /*
-   * ROL KARTI — Kamuflaj ile dedektifin ekrani BIREBIR AYNI gorunur:
-   * ayni kenarlik, ayni arka plan, ayni yazi tipi/boyutu, ayni satir sayisi,
-   * ayni kart yuksekligi. Role ozel renk/arka plan YOKTUR; iki rol de bu tek
-   * sablondan uretilir ve sadece METIN degisir:
+   * ROL KARTI — iki rol de bu tek sablondan uretilir; ayni kenarlik, ayni
+   * arka plan, ayni yazi tipi/boyutu. Role ozel renk YOKTUR, sadece metin
+   * degisir:
    *
-   *   dedektif : GIZLI KELIME / <kelime>        + GOREVIN / KOSTEBEGI BUL
-   *   kamuflaj : ROLUN        / SEN KAMUFLAJSIN! + IPUCU   / <genel ipucu>
+   *   dedektif : GIZLI KELIME / <kelime>            (altinda BASKA HICBIR SEY YOK)
+   *   kamuflaj : ROLUN / SEN KAMUFLAJSIN! + IPUCU / <genel ipucu>
    *
-   * Ipucu SADECE Kamuflaj kartinda yazar; dedektifin kartina hic basilmaz
-   * (sunucu da dedektife ipucu gondermez). Alt blok yine de ayni yapida
-   * durur, cunku eksik bir satir karti kisaltir ve yan yana oynarken kimin
-   * Kamuflaj oldugunu ele verirdi.
+   * Ipucu SADECE Kamuflaj kartinda yazar. Dedektifin kartina ne ipucu ne de
+   * onun yerini dolduran baska bir satir basilir; sunucu da dedektife ipucu
+   * gondermez, yani deger tarayiciya hic ulasmaz.
    */
   function roleCardTemplate(opts) {
     var blur = opts.hidden ? " blurred" : "";
     var caption = opts.isImposter ? "ROLÜN" : "GİZLİ KELİME";
     var bigText = opts.isImposter ? "SEN KAMUFLAJSIN!" : (opts.word || "—");
-    var subCaption = opts.isImposter ? "İpucu" : "Görevin";
-    var subText = opts.isImposter ? (opts.hint || "—") : "KÖSTEBEĞİ BUL";
     return '<div class="animate-pop rounded-2xl border border-slate-600/70 bg-gradient-to-br from-slate-700/40 to-slate-900/40 p-6 text-center shadow-2xl">' +
       (opts.owner
         ? '<p class="mb-4 text-sm font-black text-slate-200">' + esc(opts.owner) + '</p>'
@@ -443,13 +439,14 @@
       '<p class="text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + caption + '</p>' +
       '<h2 id="secret-word" class="mt-2 break-words text-3xl font-black text-slate-50 sm:text-4xl' + blur + '">' +
         esc(bigText) + '</h2>' +
-      '<div class="mx-auto mt-5 h-px w-24 bg-slate-600/70"></div>' +
-      '<p class="mt-5 text-xs font-bold uppercase tracking-[.2em] text-slate-400">' + subCaption + '</p>' +
-      '<p id="secret-hint" class="mt-1 break-words text-2xl font-black text-slate-100 sm:text-3xl' + blur + '">' +
-        esc(subText) + '</p>' +
-      '<p class="mt-5 text-xs text-slate-400">Kelimeyi çağrıştıran ama çok açık etmeyen tek bir kelime söyle.</p>' +
+      (opts.isImposter
+        ? '<div class="mx-auto mt-5 h-px w-24 bg-slate-600/70"></div>' +
+          '<p class="mt-5 text-xs font-bold uppercase tracking-[.2em] text-slate-400">İpucu</p>' +
+          '<p id="secret-hint" class="mt-1 break-words text-2xl font-black text-slate-100 sm:text-3xl' + blur + '">' +
+            esc(opts.hint || "—") + '</p>'
+        : "") +
       (opts.withToggle
-        ? '<div class="mt-4 flex items-center justify-center">' +
+        ? '<div class="mt-5 flex items-center justify-center">' +
           '<button id="btn-toggle-word" class="tap rounded-lg border border-slate-500/60 bg-slate-700/60 px-4 py-2 text-xs font-bold text-slate-100 transition hover:bg-slate-600/60">' +
           (opts.hidden ? "👁️ Göster" : "🙈 Gizle") + '</button></div>'
         : "") +
@@ -485,15 +482,18 @@
       ? 'border-slate-500/60 bg-slate-700/25'
       : (crewWin ? 'border-emerald-500/50 bg-emerald-500/10 glow-green' : 'border-rose-500/50 bg-rose-500/10 glow-red');
     var label = reveal ? 'text-slate-300' : (crewWin ? 'text-emerald-300' : 'text-rose-300');
+    // Sonuc ekraninda IPUCU YAZMAZ: ipucunu Kamuflaj disinda kimse,
+    // oyun bittikten sonra bile gormez. Yan Yana / Elden Ele modunda
+    // (reveal) sadece iki kutu kalir: gizli kelime ve Kamuflaj.
     var thirdTile = reveal
-      ? resultTile("İpucu", esc(r.secret_hint || "—"), "text-slate-300")
+      ? ""
       : resultTile("Kamuflaj tahmini", r.guess ? esc(r.guess) + (r.guess_correct ? " ✅" : " ❌") : "— yok —",
                    r.guess_correct ? "text-emerald-300" : "text-slate-300");
     return '<div class="animate-pop rounded-2xl border p-6 text-center ' + tone + '">' +
       '<p class="text-xs font-bold uppercase tracking-[.2em] ' + label + '">Tur bitti</p>' +
       '<h2 class="mt-2 text-3xl font-black sm:text-4xl">' + esc(r.winner_label) + '</h2>' +
       '<p class="mt-2 text-sm text-slate-300">' + esc(r.reason) + '</p>' +
-      '<div class="mt-5 grid gap-3 sm:grid-cols-3">' +
+      '<div class="mt-5 grid gap-3 ' + (reveal ? 'sm:grid-cols-2' : 'sm:grid-cols-3') + '">' +
         resultTile("Gizli kelime", esc(r.secret_word), "text-emerald-300") +
         resultTile("Kamuflaj", esc(r.imposter_name), "text-rose-300") +
         thirdTile +
@@ -984,7 +984,6 @@
       imposter_id: "imposter",
       imposter_name: SM.players[SM.imposter].name,
       secret_word: SM.word,
-      secret_hint: SM.hint,
       guess: null,
       guess_correct: false,
       caught: false,
