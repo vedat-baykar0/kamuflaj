@@ -1047,7 +1047,7 @@
 
     if (SM.step === "talking") {
       panel.innerHTML = '<div class="animate-pop rounded-2xl border border-amber-400/50 bg-amber-400/10 p-6 text-center">' +
-        '<h2 class="text-3xl font-black text-amber-200">Sesli tartışma başladı! 🗣️</h2>' +
+        '<h2 class="text-3xl font-black text-amber-200 sm:text-4xl">Sesli Tartışma Başladı! 🗣️</h2>' +
         '<p class="mx-auto mt-3 max-w-sm text-sm text-amber-100/80">' +
         'Sırayla herkes gizli kelimeyi çağrıştıran <b>tek bir kelime</b> söylesin, sonra tartışın. ' +
         'Kimin Kamuflaj olduğuna yüz yüze karar verin.</p>' +
@@ -1056,7 +1056,7 @@
           return '<span class="rounded-lg border border-edge bg-ink/50 px-3 py-1.5 text-sm font-bold text-slate-200">' + esc(pl.name) + '</span>';
         }).join("") +
         '</div>' +
-        '<button id="btn-sreveal-end" class="tap mt-6 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir ve Kamuflajı Göster</button>' +
+        '<button id="btn-sreveal-end" class="tap mt-6 w-full rounded-xl bg-indigo-500 px-4 py-4 text-base font-black text-white transition hover:bg-indigo-400 active:scale-[.98]">🔎 Oyunu Bitir ve Sonucu Göster</button>' +
         '</div>';
       el("btn-sreveal-end").onclick = function () { singleRevealResult(); };
       return;
