@@ -1373,9 +1373,11 @@ if __name__ == "__main__":
 
     import uvicorn
 
+    # Tum ag/baglanti ayarlari ortam degiskenlerinden gelir; kodda sabit
+    # adres/anahtar tutulmaz (bkz. .env.example).
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         reload=bool(os.environ.get("DEV")),
     )
